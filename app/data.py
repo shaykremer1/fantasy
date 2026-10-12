@@ -95,6 +95,8 @@ def validate(data):
         text(p.get("name"), "player.name")
         if p.get("team_id") not in teams:
             raise ValueError("Player references an unknown team")
+        if p.get('fantasy_position') is not None and p['fantasy_position'] not in {'G','F','C'}:
+            raise ValueError('Invalid fantasy position')
         if p.get("position") not in POSITIONS:
             raise ValueError("Position must be PG, SG, SF, PF, C, G, F or UNK")
         if p.get("availability", "unknown") not in AVAILABILITY:

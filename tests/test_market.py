@@ -58,6 +58,14 @@ class MarketTests(unittest.TestCase):
         player['price_as_of']=(utcnow()-timedelta(hours=49)).isoformat()
         self.assertIsNone(next(p for p in analyze(data)['recommendations'] if p['player_id']==player['id'])['credits'])
 
+    def test_fantasy_role_can_differ_from_basketball_role(self):
+        self.payload['data'][0]['position']['name']='Forward'
+        updated,report=apply_prices(self.data,self.payload,5,utcnow().isoformat(),'Fantasy source')
+        self.assertEqual(updated['players'][0]['position'],'G')
+        self.assertEqual(updated['players'][0]['fantasy_position'],'F')
+        self.assertEqual(updated['players'][0]['credits'],12.5)
+        self.assertEqual(report['position_differences'],['P000001'])
+
     def test_missing_credential_fails_before_any_request(self):
         with patch.dict(os.environ,{},clear=True),patch('urllib.request.urlopen') as request:
             with self.assertRaisesRegex(ValueError,'securely'):

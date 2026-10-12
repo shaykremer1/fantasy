@@ -78,6 +78,7 @@ def apply_prices(existing, payload, matchday, observed_at, source):
         key = (teams[coach['team_id']].get('tv_code'), exact_name(last, first))
         coach_names.setdefault(key, []).append(coach)
     mapped, unmatched, coaches, coach_matched, seen = 0, [], 0, 0, set()
+    position_differences = []
     for row in payload['data']:
         if not isinstance(row,dict):raise ValueError('Invalid fantasy player record')
         if isinstance(row.get('id'),bool) or not str(row.get('id','')).isdigit():
@@ -99,8 +100,10 @@ def apply_prices(existing, payload, matchday, observed_at, source):
         if p['id'] in seen:raise ValueError('Multiple fantasy records resolve to the same official player')
         seen.add(p['id'])
         expected = {'G':'Guard','PG':'Guard','SG':'Guard','F':'Forward','SF':'Forward','PF':'Forward','C':'Center'}.get(p.get('position'))
-        if expected and expected != position['name']:
-            raise ValueError('Fantasy position differs from official roster; mapping must be checked')
+        if not is_coach:
+            p['fantasy_position'] = {'Guard':'G','Forward':'F','Center':'C'}[position['name']]
+            if expected and expected != position['name']:
+                position_differences.append(p['id'])
         quote = number(row.get('quotation'),'quotation',0.01,1000)
         p.update(credits=quote,price_as_of=observed_at,price_source=source,
                  fantasy_player_id=str(row.get('id')),price_matchday=matchday)
@@ -112,7 +115,8 @@ def apply_prices(existing, payload, matchday, observed_at, source):
     validate(result)
     return result, {'matched':mapped,'unmatched':len(unmatched),'unmatched_records':unmatched,'coaches_skipped':coaches-coach_matched,'coaches_matched':coach_matched,
                     'matchday':matchday,'observed_at':observed_at,'source':source,'authentication_used':True,
-                    'note':'Exact unique name + official TV team code matches; injury status is not inferred'}
+                    'position_differences':position_differences,
+                    'note':'Exact unique name + official TV team code matches; official basketball and fantasy positions are retained separately; injury status is not inferred'}
 
 
 def sync_prices(existing, public=get_json, authorized=authorized_json):
