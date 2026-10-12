@@ -29,7 +29,7 @@ class FantasyRedirectGuard(urllib.request.HTTPRedirectHandler):
 
 def connection_status():
     return {'credential_present':bool(os.environ.get(TOKEN_NAME)), 'variable_name':TOKEN_NAME,
-            'live_schema_verified':False, 'supports':'prices', 'availability_feed_verified':False}
+            'live_schema_verified':False, 'supports':'prices', 'availability_feed_verified':False, 'source_name':'EuroLeague Fantasy Challenge', 'authentication_required':True}
 
 
 def authorized_json(url):
@@ -71,40 +71,46 @@ def apply_prices(existing, payload, matchday, observed_at, source):
         last, first = p['name'].split(',',1)
         key = (teams[p['team_id']].get('tv_code'),exact_name(last,first))
         names.setdefault(key,[]).append(p)
-    mapped, unmatched, coaches, seen = 0, [], 0, set()
+    coach_names = {}
+    for coach in result.get('coaches', []):
+        if ',' not in coach['name']:continue
+        last, first = coach['name'].split(',', 1)
+        key = (teams[coach['team_id']].get('tv_code'), exact_name(last, first))
+        coach_names.setdefault(key, []).append(coach)
+    mapped, unmatched, coaches, coach_matched, seen = 0, [], 0, 0, set()
     for row in payload['data']:
         if not isinstance(row,dict):raise ValueError('Invalid fantasy player record')
         if isinstance(row.get('id'),bool) or not str(row.get('id','')).isdigit():
             raise ValueError('Fantasy market record has no valid player id')
         position = row.get('position',{})
         if not isinstance(position,dict):raise ValueError('Fantasy position schema requires verification')
-        if position.get('name') == 'Head Coach':
-            coaches += 1
-            continue
-        if position.get('name') not in {'Guard','Forward','Center'}:
+        if position.get('name') not in {'Guard','Forward','Center','Head Coach'}:
             raise ValueError('Unknown fantasy position')
         team = row.get('team',{})
         if not isinstance(team,dict) or not isinstance(team.get('abbreviation'),str):
             raise ValueError('Fantasy team schema requires verification')
-        candidates = names.get((team['abbreviation'],exact_name(row.get('last_name'),row.get('first_name'))),[])
+        is_coach = position.get('name') == 'Head Coach'
+        if is_coach:coaches += 1
+        candidates = (coach_names if is_coach else names).get((team['abbreviation'],exact_name(row.get('last_name'),row.get('first_name'))),[])
         if len(candidates)!=1:
             unmatched.append({'fantasy_id':row.get('id'),'reason':'no exact unique team/name match'})
             continue
         p = candidates[0]
         if p['id'] in seen:raise ValueError('Multiple fantasy records resolve to the same official player')
         seen.add(p['id'])
-        expected = {'G':'Guard','PG':'Guard','SG':'Guard','F':'Forward','SF':'Forward','PF':'Forward','C':'Center'}.get(p['position'])
+        expected = {'G':'Guard','PG':'Guard','SG':'Guard','F':'Forward','SF':'Forward','PF':'Forward','C':'Center'}.get(p.get('position'))
         if expected and expected != position['name']:
             raise ValueError('Fantasy position differs from official roster; mapping must be checked')
         quote = number(row.get('quotation'),'quotation',0.01,1000)
         p.update(credits=quote,price_as_of=observed_at,price_source=source,
                  fantasy_player_id=str(row.get('id')),price_matchday=matchday)
         # is_injured=false is NOT proof that a player will play. No status inference.
-        mapped += 1
-    if not mapped:raise ValueError('No exact player matches; roster TV codes and source identifiers must be verified')
+        if is_coach:coach_matched += 1
+        else:mapped += 1
+    if not mapped and not coach_matched:raise ValueError('No exact player matches; roster TV codes and source identifiers must be verified')
     if source not in result['sources']:result['sources'].append(source)
     validate(result)
-    return result, {'matched':mapped,'unmatched':len(unmatched),'unmatched_records':unmatched,'coaches_skipped':coaches,
+    return result, {'matched':mapped,'unmatched':len(unmatched),'unmatched_records':unmatched,'coaches_skipped':coaches-coach_matched,'coaches_matched':coach_matched,
                     'matchday':matchday,'observed_at':observed_at,'source':source,'authentication_used':True,
                     'note':'Exact unique name + official TV team code matches; injury status is not inferred'}
 

@@ -5,6 +5,7 @@ import math
 import os
 from pathlib import Path
 import tempfile
+from .photos import safe_image
 
 POSITIONS = {"PG", "SG", "SF", "PF", "C", "G", "F", "UNK"}
 AVAILABILITY = {"available", "doubtful", "out", "unknown"}
@@ -71,6 +72,9 @@ def validate(data):
         return result
 
     teams, players, games = index("teams"), index("players"), index("games")
+    for item in [*teams.values(), *players.values()]:
+        if item.get('image_url') is not None and not safe_image(item['image_url']):
+            raise ValueError('Images must use an approved HTTPS image host')
     for t in teams.values():
         text(t.get("name"), "team.name")
     if 'coaches' in data:
@@ -80,6 +84,13 @@ def validate(data):
             text(c.get('name'), 'coach.name')
             if c.get('team_id') not in teams or not isinstance(c.get('active'), bool):
                 raise ValueError('Invalid coach team or active status')
+            if c.get('credits') is not None:
+                number(c['credits'], 'coach.credits', 0.01, 1000)
+                if timestamp(c.get('price_as_of')) > utcnow():
+                    raise ValueError('Coach price observation cannot be in the future')
+                text(c.get('price_source'), 'coach.price_source')
+            if c.get('price_matchday') is not None and (type(c['price_matchday']) is not int or c['price_matchday'] < 1):
+                raise ValueError('Coach price matchday must be a positive integer')
     for p in players.values():
         text(p.get("name"), "player.name")
         if p.get("team_id") not in teams:

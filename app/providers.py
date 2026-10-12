@@ -21,6 +21,7 @@ import urllib.error
 from email.utils import parsedate_to_datetime
 from http.client import RemoteDisconnected
 from .data import validate, timestamp
+from .photos import apply_photos, safe_image
 
 API = "https://api-live.euroleague.net/v2/competitions/E/seasons/{season}/games?limit={limit}"
 BOX = "https://live.euroleague.net/api/Boxscore?gamecode={code}&seasoncode={season}"
@@ -107,7 +108,7 @@ def schedule(payload, season):
             away_key = "road" if "road" in item else "visiting"
             home, away = item["local"]["club"], item[away_key]["club"]
             for club in (home, away):
-                teams[str(club["code"])] = {"id": str(club["code"]), "name": club["name"], "tv_code": club.get('tvCode')}
+                teams[str(club["code"])] = {"id": str(club["code"]), "name": club["name"], "tv_code": club.get('tvCode'), "image_url": safe_image(club.get("images", {}).get("crest"))}
             date = item.get("utcDate")
             if not date:
                 raise ValueError("Schedule lacks utcDate; timezone must not be guessed")
@@ -228,7 +229,9 @@ def sync(existing, season, fetch=get_json, progress=None, through_round=None):
         if person.get('type') == 'E' and person.get('active') is True:
             club = person.get('club', {}).get('code')
             if club in {t['id'] for t in teams}:
-                coaches[club] = {'id': 'COACH-' + str(person['person']['code']),
+                coach_id = 'COACH-' + str(person['person']['code'])
+                previous = next((c for c in existing.get('coaches', []) if same and c['id'] == coach_id), {})
+                coaches[club] = {**previous, 'id': coach_id,
                                  'name': person['person']['name'], 'team_id': club, 'active': True}
         if person.get("type") != "J":
             continue
@@ -251,6 +254,10 @@ def sync(existing, season, fetch=get_json, progress=None, through_round=None):
         if p["position"] in {"UNK", "G", "F", "C"} and not p.get("position_source", "").startswith("user"):
             p["position"] = official_position
             p["position_source"] = "https://api-live.euroleague.net (season registration)"
+        images = person.get('person', {}).get('images', {})
+        image = safe_image(images.get('headshot')) or safe_image(images.get('action'))
+        if image:
+            p.update(image_url=image, image_source='https://api-live.euroleague.net (official portrait)')
         p["roster_active"] = person.get("active") is True
         roster[pid] = p
     game_index = {g['id']: g for g in games}
@@ -270,7 +277,7 @@ def sync(existing, season, fetch=get_json, progress=None, through_round=None):
     result = {"schema_version": 1, "season": season, "mode": "live",
         "sources": list(dict.fromkeys((existing["sources"] if same else []) + ["https://api-live.euroleague.net", "https://live.euroleague.net"])),
         "teams": teams, "coaches": list(coaches.values()), "players": list(roster.values()), "games": games, "appearances": rows}
-    return validate(result)
+    return validate(apply_photos(result))
 
 
 def import_roster(existing, contents):

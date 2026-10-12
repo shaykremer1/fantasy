@@ -33,6 +33,31 @@ class MarketTests(unittest.TestCase):
             with self.subTest(modification=modification),self.assertRaises(ValueError):
                 apply_prices(data,payload,5,utcnow().isoformat(),'Test')
 
+    def test_coach_prices_are_mapped_separately(self):
+        self.data['coaches'] = [{'id':'COACH-1','name':'COACH, JIM','team_id':'A','active':True}]
+        self.payload['data'].append({'id':8,'first_name':'Jim','last_name':'Coach','quotation':6.5,
+                                     'position':{'name':'Head Coach'},'team':{'abbreviation':'AAA'}})
+        result,report=apply_prices(self.data,self.payload,5,utcnow().isoformat(),'Test source')
+        self.assertEqual(result['coaches'][0]['credits'],6.5)
+        self.assertEqual(report['coaches_matched'],1)
+        self.assertEqual(result['players'][0]['credits'],12.5)
+
+    def test_stale_or_wrong_round_quote_is_not_presented_as_current(self):
+        from app.demo import dataset
+        from app.analysis import analyze
+        from datetime import timedelta
+        data=dataset();analysis=analyze(data)
+        player=data['players'][0]
+        player['price_matchday']=analysis['target_round']+1
+        result=analyze(data)
+        candidate=next(p for p in result['recommendations'] if p['player_id']==player['id'])
+        self.assertIsNone(candidate['credits'])
+        self.assertIsNotNone(candidate['reported_credits'])
+        self.assertEqual(result['coverage']['fresh_prices'],29)
+        player['price_matchday']=analysis['target_round']
+        player['price_as_of']=(utcnow()-timedelta(hours=49)).isoformat()
+        self.assertIsNone(next(p for p in analyze(data)['recommendations'] if p['player_id']==player['id'])['credits'])
+
     def test_missing_credential_fails_before_any_request(self):
         with patch.dict(os.environ,{},clear=True),patch('urllib.request.urlopen') as request:
             with self.assertRaisesRegex(ValueError,'securely'):

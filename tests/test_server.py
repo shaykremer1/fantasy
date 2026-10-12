@@ -71,6 +71,15 @@ class ServerTests(unittest.TestCase):
         self.assertIn('price_source', text)
         self.assertIn('DEMO,P0', text)
 
+    def test_portrait_csp_and_local_fallback(self):
+        with self.request('/') as response:
+            csp=response.headers['Content-Security-Policy']
+            self.assertIn('img-src',csp)
+            self.assertIn('https://media-cdn.cortextech.io',csp)
+            self.assertIn("script-src 'self'",csp)
+        with self.request('/player-placeholder.svg') as response:
+            self.assertIn('<svg',response.read().decode())
+
     def test_successful_import_is_persisted_and_bad_import_preserves_it(self):
         data = dataset()
         data['mode'] = 'live'

@@ -7,6 +7,33 @@ const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp
 const numeric = value => `<span class="numeric">${fmt(value)}</span>`;
 const confidence = value => `<span class="confidence ${escape(value)}"><i></i><i></i><i></i> ${{low:'קטן',medium:'בינוני',higher:'גדול יותר'}[value]}</span>`;
 
+const displayName = name => {
+  const parts=String(name||'').split(',');
+  return parts.length===2 ? `${parts[1].trim()} ${parts[0].trim()}` : String(name||'');
+};
+function imageUrl(value) {
+  try {
+    const url=new URL(value);
+    if(url.protocol==='https:' && ['media-cdn.incrowdsports.com','media-cdn.cortextech.io','fantaking-assets.dunkest.com','www.dunkest.com'].includes(url.hostname) && !url.username && !url.password && (!url.port||url.port==='443'))return url.href;
+  }catch{}
+  return null;
+}
+function portrait(p, className='portrait') {
+  const src=imageUrl(p.image_url);
+  return `<img class="${className}${src?'':' placeholder'}" data-portrait src="${escape(src||'/player-placeholder.svg')}" alt="${src?escape(displayName(p.name)):''}" width="100" height="112" loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
+}
+function priceBadge(p) {
+  if(p.credits!=null)return `<span class="credit-badge" title="${escape(`עודכן ${date(p.price_as_of)}`)}"><b>${fmt(p.credits)}</b><span>קרדיטים</span></span>`;
+  if(p.reported_credits!=null)return `<span class="credit-badge stale" title="${escape(`המחיר האחרון שדווח: ${date(p.price_as_of)}; אינו מאומת למחזור הנבחר`)}"><b>${fmt(p.reported_credits)}</b><span>מחיר קודם</span></span>`;
+  return '<span class="credit-badge missing"><span>מחיר טרם חובר</span></span>';
+}
+document.addEventListener('error',event=>{
+  const img=event.target;
+  if(img instanceof HTMLImageElement && img.hasAttribute('data-portrait') && !img.src.endsWith('/player-placeholder.svg')){
+    img.src='/player-placeholder.svg';img.classList.add('placeholder');img.alt='';
+  }
+},true);
+
 async function api(path, body) {
   const response = await fetch(path, body === undefined ? {} : {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
   const result = await response.json();
@@ -63,7 +90,7 @@ async function loadValidation(request) {
     const [report,market] = await Promise.all([api(`/api/backtest?mode=${state.mode}`),api('/api/market-status')]);
     if (request !== state.request) return;
     $('market-sync').disabled = state.mode === 'demo' || !market.credential_present;
-    $('market-connection').textContent = market.last_import ? `עודכנו ${market.last_import.matched} מחירים; ${market.last_import.unmatched} שחקנים לא הותאמו.` : market.credential_present ? 'קיימת הרשאה לבדיקה; החיבור החי עדיין לא אומת.' : 'נדרשת הרשאה לקריאת מחירים. אפשר להמשיך בייבוא CSV.';
+    $('market-connection').textContent = market.last_import ? `עודכנו ${market.last_import.matched} מחירים; ${market.last_import.unmatched} שחקנים לא הותאמו.` : market.credential_present ? 'קיימת הרשאה לבדיקה; החיבור החי עדיין לא אומת.' : 'מקור המחירים: EuroLeague Fantasy Challenge. נדרש חיבור מורשה; אפשר גם לייבא CSV.';
     const available = report.available && report.summary.n > 0;
     $('validation-metrics').classList.toggle('hidden',!available);
     $('validation-rounds').classList.toggle('hidden',!available);
@@ -111,10 +138,10 @@ function renderPlayers() {
   $('show-more').classList.toggle('hidden', players.length <= 12);
   $('show-more').textContent = state.visible === 12 ? `הצג את כל ${players.length} המועמדים` : 'הצג רק 12 מועמדים מובילים';
   $('player-cards').innerHTML = players.length ? players.slice(0,state.visible).map((p,i) => `<article class="player-card ${i === 0 && p.eligible ? 'top-pick' : ''}">
-    <div class="player-header"><span class="player-avatar">${escape(p.name.trim().slice(0,2))}</span><div><h3>${escape(p.name)}</h3><small>${escape(p.team)}</small></div><span class="position-chip">${escape(p.position)}</span></div>
+    <div class="player-header">${portrait(p,'player-avatar')}<div><h3 dir="auto">${escape(displayName(p.name))}</h3><small>${escape(p.team)}</small></div><span class="position-chip">${escape(p.position)}</span></div>
     <div class="opponent-line">מול <b>${escape(p.opponent)}</b> · ${p.venue === 'home' ? 'בית' : 'חוץ'} · ${escape(date(p.date))}</div>
     <div class="prediction"><div><span>תחזית PIR</span><strong>${fmt(p.projected_pir)}</strong></div><div class="boost"><span>יתרון היריבה</span><strong class="${p.matchup_delta < 0 ? 'negative' : ''}">${sign(p.matchup_delta)}</strong></div></div>
-    <div class="player-details"><span>קרדיטים <b>${fmt(p.credits)}</b></span><span>PIR לקרדיט <b>${fmt(p.pir_per_credit,2)}</b></span><span>דקות צפויות <b>${fmt(p.projected_minutes)}</b></span></div>
+    <div class="player-details">${priceBadge(p)}<span>PIR לקרדיט <b>${fmt(p.pir_per_credit,2)}</b></span><span>דקות צפויות <b>${fmt(p.projected_minutes)}</b></span></div>
     <div class="availability-line"><span class="${escape(p.availability)}">● ${{available:'זמין לפי המקור',doubtful:'בספק',unknown:'זמינות לא מאומתת'}[p.availability] || 'לא ידוע'}</span>${confidence(p.confidence)}</div>
     ${p.warnings.length ? `<div class="warning">${p.warnings.map(escape).join(' · ')}</div>` : ''}
     <details><summary>הנתונים מאחורי התחזית</summary><div>PIR אחרון: ${fmt(p.recent_pir)} · ${p.recent_games} הופעות. מול היריבה: ${p.opponent_games} משחקים, ${p.comparable_games} עם בסיס השוואה.</div><div>מחיר שדווח: ${fmt(p.reported_credits)} · ${escape(date(p.price_as_of))} · ${escape(p.price_source || 'אין מקור')}</div><div>זמינות: ${escape(date(p.availability_as_of))} · ${escape(p.availability_source || 'אין מקור')}</div></details>
@@ -206,12 +233,15 @@ pollSync();
 function renderScout() {
   const scout=state.data.scouting;
   if(!scout)return;
-  const labels={C:'טופ 3 סנטרים',F:'טופ 3 פורוורדים',G:'טופ 3 גארדים (רכזים וקלעים)'};
-  $('top-three').innerHTML=['C','F','G'].map(role=>`<article class="shortlist-column"><h3>${labels[role]}</h3>${scout.top_three[role].length ? scout.top_three[role].map((p,i)=>`<div class="shortlist-player"><strong>${i+1}. ${escape(p.name)}</strong><p>${escape(p.team)} מול ${escape(p.opponent)} · ${escape(date(p.date))}</p><p>היריבה מאפשרת <b>${fmt(p.opponent_average_pir)} PIR</b> לשחקן בעמדה · ${p.opponent_games} משחקים</p><p>התאמת יריבה: <b class="numeric">${fmt((p.matchup_index-1)*100)}%</b> ביחס לליגה · ציון בחירה <b>${fmt(p.scout_score)}</b></p><small>${p.availability==='available'?'זמין לפי המקור':p.availability==='doubtful'?'בספק':'זמינות לא מאומתת'}${p.credits==null?' · מחיר לא ידוע':` · ${fmt(p.credits)} קרדיטים`}</small></div>`).join(''):'<p class="no-results">אין מספיק משחקים ונתונים לבחירת שלושה מועמדים.</p>'}</article>`).join('');
-  $('coach-picks').innerHTML=(scout.coaches||[]).map((c,i)=>`<article class="coach-card"><h3>${i+1}. ${escape(c.name)}</h3><p>${escape(c.team)} מול ${escape(c.opponent)} · ${c.venue==='home'?'בית':'חוץ'}</p><p>${escape(date(c.date))}</p><p>מדד יתרון מול היריבה: <b class="numeric">${fmt(c.matchup_margin)}</b></p><p>הקבוצה: ${c.team_form.wins} ניצחונות ב־${c.team_form.games} משחקים · הפרש ממוצע <b class="numeric">${fmt(c.team_form.average_margin)}</b></p><p>היריבה: ${c.opponent_form.wins} ניצחונות ב־${c.opponent_form.games} משחקים · הפרש ממוצע <b class="numeric">${fmt(c.opponent_form.average_margin)}</b></p></article>`).join('')||'<p class="no-results">אין מספיק תוצאות או רישום מאמנים רשמי למחזור שנבחר. הרשימה תופיע לאחר עדכון הנתונים.</p>';
+  const labels={C:'סנטרים',F:'פורוורדים',G:'גארדים'};
+  const market=state.data.market;
+  const count=state.data.coverage.fresh_prices;
+  $('market-summary').innerHTML=state.mode==='demo'?'<span class="market-icon">◈</span><div><strong>מחירים סינתטיים להדגמה בלבד</strong><p>עברו למצב חי לנתוני יורוליג.</p></div>':`<span class="market-icon">◈</span><div><strong>${count?`${count} מחירי שחקנים מעודכנים`:'מחירי הקרדיטים ממתינים לחיבור'}</strong><p>מקור: EuroLeague Fantasy Challenge · ${market?.error?'עדכון המחירים נכשל; מחיר קודם מסומן בנפרד.':market?.connected?'המחירים נבדקים יחד עם עדכון המשחקים.':'רשימת המחירים הרשמית דורשת הרשאה.'}</p></div>`;
+  $('top-three').innerHTML=['C','F','G'].map(role=>`<article class="shortlist-column"><header class="position-heading"><span class="role-icon">${role}</span><div><h3>טופ 3 ${labels[role]}</h3><p>${role==='G'?'רכזים וקלעים':'לפי היריבה הקרובה'}</p></div></header>${scout.top_three[role].length ? scout.top_three[role].map((p,i)=>`<article class="shortlist-player ${i===0?'first-choice':''}"><div class="pick-hero"><span class="pick-rank">${i===0?'בחירה מובילה':`מקום ${i+1}`}</span>${portrait(p)}${priceBadge(p)}</div><div class="pick-body"><h4 dir="auto">${escape(displayName(p.name))}</h4><p class="pick-team" dir="auto">${escape(p.team)}</p><div class="fixture-line"><span>מול</span><strong dir="auto">${escape(p.opponent)}</strong><span class="venue-tag">${p.venue==='home'?'בית':'חוץ'}</span></div><p class="fixture-date">${escape(date(p.date))}</p><div class="pick-stats"><div><span>היריבה סופגת בעמדה</span><strong>${fmt(p.opponent_average_pir)} <small>PIR</small></strong></div><div><span>ציון בחירה</span><strong>${fmt(p.scout_score)}</strong></div></div><p class="matchup-explanation"><span class="matchup-pill ${p.matchup_index<1?'negative':''}">${sign((p.matchup_index-1)*100)}%</span> ${p.matchup_index>=1?'יותר':'פחות'} PIR ביחס לליגה · ${p.opponent_games} משחקים</p><div class="pick-footer"><span class="availability-tag ${escape(p.availability)}">${p.availability==='available'?'זמין לפי המקור':p.availability==='doubtful'?'בספק':'זמינות לא מאומתת'}</span>${p.credits!=null?`<span title="${escape(date(p.price_as_of))}">מחיר מעודכן</span>`:''}</div></div></article>`).join(''):'<p class="no-results">אין מספיק משחקים ונתונים לבחירת שלושה מועמדים.</p>'}</article>`).join('');
+  $('coach-picks').innerHTML=(scout.coaches||[]).map((c,i)=>`<article class="coach-card"><div class="coach-card-header"><span class="coach-rank">0${i+1}</span>${priceBadge(c)}</div><h3 dir="auto">${escape(displayName(c.name))}</h3><p class="pick-team" dir="auto">${escape(c.team)}</p><div class="fixture-line"><span>מול</span><strong dir="auto">${escape(c.opponent)}</strong><span class="venue-tag">${c.venue==='home'?'בית':'חוץ'}</span></div><p class="fixture-date">${escape(date(c.date))}</p><div class="coach-advantage"><span>מדד יתרון מול היריבה</span><strong class="numeric">${sign(c.matchup_margin)}</strong></div><div class="coach-form"><p>הקבוצה: <b>${c.team_form.wins}/${c.team_form.games}</b> ניצחונות · הפרש <b class="numeric">${sign(c.team_form.average_margin)}</b></p><p>היריבה: <b>${c.opponent_form.wins}/${c.opponent_form.games}</b> ניצחונות · הפרש <b class="numeric">${sign(c.opponent_form.average_margin)}</b></p></div></article>`).join('')||'<p class="no-results">אין מספיק תוצאות או רישום מאמנים רשמי למחזור שנבחר. הרשימה תופיע לאחר עדכון הנתונים.</p>';
   const teams=new Map();
-  scout.defenses.forEach(d=>{if(!teams.has(d.team_id))teams.set(d.team_id,{name:d.team});teams.get(d.team_id)[d.role]=d;});
-  $('position-defense-rows').innerHTML=[...teams.values()].sort((a,b)=>{if(state.positionSort){const x=a[state.positionSort]?.average_pir,y=b[state.positionSort]?.average_pir;if(x==null&&y!=null)return 1;if(y==null&&x!=null)return -1;if(x!=null&&y!=null&&x!==y)return state.positionDirection==='desc'?y-x:x-y;}return a.name.localeCompare(b.name);}).map(t=>`<tr><td>${escape(t.name)}</td>${['C','F','G'].map(r=>{const d=t[r];return `<td>${d?`<b>${fmt(d.average_pir)}</b><small class="confidence"> · ${d.games} משחקים / ${d.appearances} הופעות</small>`:'—'}</td>`;}).join('')}</tr>`).join('')||'<tr><td colspan="4" class="no-results">ממתין לסטטיסטיקות יורוליג.</td></tr>';
+  scout.defenses.forEach(d=>{if(!teams.has(d.team_id))teams.set(d.team_id,{name:d.team,image:d.team_image_url});teams.get(d.team_id)[d.role]=d;});
+  $('position-defense-rows').innerHTML=[...teams.values()].sort((a,b)=>{if(state.positionSort){const x=a[state.positionSort]?.average_pir,y=b[state.positionSort]?.average_pir;if(x==null&&y!=null)return 1;if(y==null&&x!=null)return -1;if(x!=null&&y!=null&&x!==y)return state.positionDirection==='desc'?y-x:x-y;}return a.name.localeCompare(b.name);}).map(t=>`<tr><td><span class="defender-name">${imageUrl(t.image)?`<img src="${escape(imageUrl(t.image))}" alt="" width="32" height="32" loading="lazy" referrerpolicy="no-referrer">`:""}<span dir="auto">${escape(t.name)}</span></span></td>${['C','F','G'].map(r=>{const d=t[r];return `<td class="pir-cell ${d&&d.average_pir>=10?'heat-high':d&&d.average_pir>=8?'heat-mid':'heat-low'}">${d?`<b>${fmt(d.average_pir)}</b><small class="confidence"> · ${d.games} משחקים / ${d.appearances} הופעות</small>`:'—'}</td>`;}).join('')}</tr>`).join('')||'<tr><td colspan="4" class="no-results">ממתין לסטטיסטיקות יורוליג.</td></tr>';
   const a=state.data.auto_refresh;
   $('automatic-status').textContent=state.mode==='demo'?'הדגמה סינתטית — אינה מתעדכנת ממשחקים אמיתיים.':a.enabled?`עדכון יורוליג אוטומטי כל ${a.interval_seconds/60} דקות, כל עוד השרת פועל. ${a.last_success?`עדכון מוצלח: ${date(a.last_success)}.`:'ממתין לעדכון ראשון.'} ${a.error?'העדכון האחרון נכשל; הנתונים הקודמים נשמרו.':''}`:'העדכון האוטומטי כבוי בשרת זה.';
 }

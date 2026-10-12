@@ -38,7 +38,7 @@ def scout(data, analysis):
             pir30=30*sum(r['pir'] for r in values)/sum(r['minutes'] for r in values)
             all_rows=league[pos]
             reference=30*sum(r['pir'] for r in all_rows)/sum(r['minutes'] for r in all_rows)
-            defense.append({'team_id':tid,'team':teams[tid]['name'],'role':pos,
+            defense.append({'team_id':tid,'team':teams[tid]['name'],'team_image_url':teams[tid].get('image_url'),'role':pos,
                 'average_pir':round(mean(r['pir'] for r in values),2),
                 'total_pir_per_game':round(sum(r['pir'] for r in values)/len(selected),2),
                 'pir_per_30':round(pir30,2),'matchup_index':round(pir30/reference,4) if reference>0 else None,

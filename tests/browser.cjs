@@ -39,6 +39,33 @@ const path = require('node:path');
     assert((await page.locator('#coach-picks').innerText()).includes('מול'));
     assert((await page.locator('#coach-picks').innerText()).includes('היריבה:'));
     assert.equal(await page.locator('#position-defense-rows tr').count(),6);
+    assert.equal(await page.locator('#top-three img[data-portrait]').count(),9);
+    assert.equal(await page.locator('#top-three .credit-badge:not(.missing)').count(),9);
+    // Exercise a portrait response and a failed portrait without relying on remote CDN access.
+    await page.route('https://media-cdn.cortextech.io/test-portrait.png',route=>route.fulfill({status:200,contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="100" height="112"><rect width="100" height="112" fill="#406655"/></svg>'}));
+    await page.route('https://media-cdn.cortextech.io/broken-portrait.png',route=>route.fulfill({status:404,body:''}));
+    await page.route('**/api/dashboard?**',async route=>{
+      const response=await route.fetch();
+      const data=await response.json();
+      if(data.mode==='demo') {
+        data.scouting.top_three.C[0].image_url='https://media-cdn.cortextech.io/test-portrait.png';
+        data.scouting.top_three.C[1].image_url='https://media-cdn.cortextech.io/broken-portrait.png';
+        data.scouting.top_three.C[2].credits=null;
+        data.scouting.top_three.C[2].reported_credits=8.5;
+      }
+      await route.fulfill({response,json:data});
+    });
+    await page.locator('#window').selectOption('5');
+    await page.waitForFunction(()=>document.querySelector('#top-three .shortlist-player img')?.src.includes('test-portrait.png'));
+    await page.locator('#shortlist').scrollIntoViewIfNeeded();
+    await page.waitForFunction(()=>document.querySelector('#top-three .shortlist-player img')?.naturalWidth>0);
+    await page.waitForFunction(()=>document.querySelectorAll('#top-three .shortlist-player img')[1]?.src.endsWith('/player-placeholder.svg'));
+    assert.equal(await page.locator('#top-three .credit-badge.stale').count(),1);
+    assert((await page.locator('#top-three .credit-badge.stale').innerText()).includes('מחיר קודם'));
+    await page.unroute('**/api/dashboard?**');
+    await page.locator('#window').selectOption('10');
+    await page.waitForFunction(()=>document.querySelector('#top-three .credit-badge.stale')===null);
+
     for (const [role,col] of [['C',1],['F',2],['G',3]]) {
       const button=page.locator(`[data-position-sort="${role}"]`);
       for (const descending of [true,false]) {

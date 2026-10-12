@@ -1,6 +1,7 @@
 """Coach shortlist from team results against the next opponent, not player PIR."""
 from statistics import mean
 from .data import timestamp, utcnow
+from .analysis import fresh
 
 
 def recommend_coaches(data, analysis):
@@ -41,6 +42,9 @@ def recommend_coaches(data, analysis):
                           'opponent': teams[opponent], 'game_id': g['id'], 'date': g['date'],
                           'venue': 'home' if tid == g['home_team_id'] else 'away',
                           'team_form': own, 'opponent_form': rival,
+                          'credits': coach.get('credits') if fresh(coach.get('price_as_of'), 48, utcnow()) and coach.get('price_matchday') == analysis['target_round'] else None,
+                          'reported_credits': coach.get('credits'), 'price_as_of': coach.get('price_as_of'),
+                          'price_source': coach.get('price_source'),
                           'matchup_margin': round((own['average_margin'] - rival['average_margin']) / 2, 2)})
     picks.sort(key=lambda p: (-p['matchup_margin'], p['coach_id'], p['game_id']))
     return picks[:3]

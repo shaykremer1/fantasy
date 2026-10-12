@@ -143,3 +143,9 @@ node tests/browser.cjs
 ### Coach recommendations
 
 The dashboard also lists up to three active head coaches from official season registrations, against their upcoming EuroLeague opponent. It compares each team's average point differential over the selected history window (at least three completed results per side). Half the difference is an exploratory matchup ranking, not a calibrated margin forecast, win probability, or expected fantasy score. Coach scoring follows team results, including overtime rules; player PIR is not used. Coach credit prices are unavailable from the public statistical source. The shortlist refreshes with the same automatic statistics sync.
+
+### Photos and price display
+
+Player cards include sourced portraits, clearer names and opponent information, an explicit credit-price badge, and separated scouting metrics. Team crests and sortable PIR cells improve the defense table. The bundled public `app/player_photos.json` maps official player IDs only after a unique exact name match; official registration portraits take precedence. Missing or failed images fall back to a local silhouette. `python -m app.photos` refreshes the portrait directory with paced public reads.
+
+Prices come from the authorized EuroLeague Fantasy Challenge market, including coach prices. Configure `FANTASY_ACCESS_TOKEN` securely in Render Environment to enable automatic read-only refreshes; see DEPLOY.md. Never paste credentials into chat or commit them. No usable credential is present in the development environment, and the live authenticated market schema remains unverified. A failed price refresh keeps the successful statistical update. Prices older than 48 hours or associated with another matchday appear explicitly as previous prices; missing quotes are not fabricated. The public Dunkest table for the previous season is not used for current prices.

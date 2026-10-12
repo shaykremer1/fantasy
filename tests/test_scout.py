@@ -33,3 +33,23 @@ class ScoutTests(unittest.TestCase):
             with patch('app.server.sync',side_effect=ValueError('source unavailable')):
                 self.assertFalse(app.refresh_once())
             self.assertEqual(app.store.read()['appearances'][0]['pir'],55)
+
+    def test_automatic_price_failure_keeps_successful_statistics(self):
+        with tempfile.TemporaryDirectory() as folder:
+            app=Application(Path(folder)/'live.json')
+            data=dataset();data['mode']='live';data['season']='E2026';app.store.save(data)
+            with patch('app.server.sync',return_value=data), patch('app.server.connection_status',return_value={'credential_present':True}), patch('app.server.sync_prices',side_effect=ValueError('unauthorized')):
+                self.assertTrue(app.refresh_once())
+            self.assertEqual(app.store.read()['season'],'E2026')
+            self.assertIsNotNone(app.market_error)
+
+    def test_automatic_prices_saved_after_statistics(self):
+        with tempfile.TemporaryDirectory() as folder:
+            app=Application(Path(folder)/'live.json')
+            data=dataset();data['mode']='live';data['season']='E2026';app.store.save(data)
+            import copy
+            priced=copy.deepcopy(data);priced['players'][0]['credits']=15
+            with patch('app.server.sync',return_value=data), patch('app.server.connection_status',return_value={'credential_present':True}), patch('app.server.sync_prices',return_value=(priced,{'matched':1})):
+                self.assertTrue(app.refresh_once())
+            self.assertEqual(app.store.read()['players'][0]['credits'],15)
+            self.assertEqual(app.market_report['matched'],1)

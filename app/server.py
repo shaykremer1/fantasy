@@ -18,6 +18,7 @@ from .providers import import_roster, sync
 from .market import connection_status, sync_prices
 from .backtest import evaluate
 from .scout import scout
+from .photos import apply_photos
 from .data import utcnow
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -31,6 +32,7 @@ class Application:
         self.lock = threading.RLock()
         self.job = {"state": "idle", "completed": 0, "total": 0, "error": None}
         self.market_report = None
+        self.market_error = None
         self.stop_event=threading.Event()
         self.auto={'enabled':False,'interval_seconds':300,'last_attempt':None,'last_success':None,'error':None}
         self.auto_thread=None
@@ -60,7 +62,7 @@ class Application:
 
     def snapshot(self, mode):
         with self.lock:
-            return self.demo if mode == "demo" else self.store.read()
+            return self.demo if mode == "demo" else apply_photos(self.store.read())
 
     def progress(self, completed, total):
         with self.lock:
@@ -74,8 +76,23 @@ class Application:
                 updated = sync(current, season, progress=self.progress)
             with self.lock:
                 self.store.save(updated)
-                if kind=='market':self.market_report=report
+                if kind=='market':
+                    self.market_report=report
+                    self.market_error=None
+            if kind != 'market' and connection_status()['credential_present']:
+                try:
+                    priced, report = sync_prices(updated)
+                    with self.lock:
+                        self.store.save(priced)
+                        self.market_report = report
+                        self.market_error = None
+                except Exception:
+                    # Successful statistics remain available when pricing is unavailable.
+                    with self.lock:
+                        self.market_error = 'Price source could not be refreshed; previous prices retained'
+            with self.lock:
                 self.job.update(state="done")
+
         except (ValueError, urllib.error.URLError, OSError, TimeoutError) as exc:
             with self.lock:
                 self.job.update(state="failed", error=f"{type(exc).__name__}: {exc}")
@@ -95,11 +112,14 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'")
         if download:
             self.send_header("Content-Disposition", f'attachment; filename="{download}"')
         self.end_headers()
         self.wfile.write(data)
+
+    def end_headers(self):
+        self.send_header("Content-Security-Policy", "default-src 'self'; img-src 'self' https://media-cdn.incrowdsports.com https://media-cdn.cortextech.io https://fantaking-assets.dunkest.com https://www.dunkest.com; style-src 'self'; script-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'")
+        super().end_headers()
 
     def reply(self, status, data):
         self.send_bytes(status, json.dumps(data, ensure_ascii=False, allow_nan=False).encode())
@@ -117,7 +137,7 @@ class Handler(SimpleHTTPRequestHandler):
                     return self.reply(200, self.app.job)
             if parsed.path == '/api/market-status':
                 with self.app.lock:
-                    return self.reply(200,{**connection_status(),'live_schema_verified':self.app.market_report is not None,'last_import':self.app.market_report})
+                    return self.reply(200,{**connection_status(),'live_schema_verified':self.app.market_report is not None,'last_import':self.app.market_report,'error':self.app.market_error})
             if parsed.path in {'/api/backtest','/api/backtest/export'}:
                 mode=query.get('mode',['live'])[0]
                 if mode not in {'live','demo'}:raise ValueError('Invalid mode')
@@ -165,10 +185,11 @@ class Handler(SimpleHTTPRequestHandler):
                 analysis['scouting']=scout(data,analysis)
                 analysis['auto_refresh']=dict(self.app.auto)
                 analysis['public_read_only']=self.app.public_read_only
+                analysis['market']={'connected':connection_status()['credential_present'], 'last_import':self.app.market_report, 'error':self.app.market_error}
                 return self.reply(200,analysis)
             if parsed.path.startswith("/api/"):
                 return self.reply(404, {"error": "Unknown endpoint"})
-            if parsed.path not in {"/", "/index.html", "/style.css", "/app.js"}:
+            if parsed.path not in {"/", "/index.html", "/style.css", "/app.js", "/player-placeholder.svg"}:
                 return self.reply(404, {"error": "Not found"})
             return super().do_GET()
         except (ValueError, TypeError, KeyError) as exc:
