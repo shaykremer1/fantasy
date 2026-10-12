@@ -73,6 +73,13 @@ def validate(data):
     teams, players, games = index("teams"), index("players"), index("games")
     for t in teams.values():
         text(t.get("name"), "team.name")
+    if 'coaches' in data:
+        if not isinstance(data['coaches'], list) or len(data['coaches']) > 100000:
+            raise ValueError('coaches must be a bounded array')
+        for c in index('coaches').values():
+            text(c.get('name'), 'coach.name')
+            if c.get('team_id') not in teams or not isinstance(c.get('active'), bool):
+                raise ValueError('Invalid coach team or active status')
     for p in players.values():
         text(p.get("name"), "player.name")
         if p.get("team_id") not in teams:
@@ -107,6 +114,11 @@ def validate(data):
         if not isinstance(g.get("round"), int) or isinstance(g["round"], bool) or g["round"] < 1:
             raise ValueError("round must be a positive integer")
         timestamp(g.get("date"))
+        for field in ('home_score', 'away_score'):
+            if g.get(field) is not None:
+                number(g[field], field, 0, 300)
+                if type(g[field]) is not int:
+                    raise ValueError('Game scores must be integers')
     seen = set()
     for row in data["appearances"]:
         if not isinstance(row, dict):

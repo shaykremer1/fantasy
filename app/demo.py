@@ -29,6 +29,9 @@ def dataset():
             game = {"id": gid, "round": rnd, "home_team_id": f"T{a}", "away_team_id": f"T{b}",
                 "date": (now + timedelta(days=2) if rnd == 11 else now - timedelta(days=(11-rnd)*5)).isoformat(),
                 "status": "scheduled" if rnd == 11 else "finished"}
+            if rnd < 11:
+                game['home_score'] = 80 + a * 3 + rnd % 4
+                game['away_score'] = 77 + b * 3
             games.append(game)
             if rnd < 11:
                 for p in players:
@@ -42,4 +45,4 @@ def dataset():
                         "minutes": minutes, "pir": round((rate + boost)*minutes + rng.uniform(-5,5))})
         rotation = [rotation[0], rotation[-1], *rotation[1:-1]]
     return {"schema_version": 1, "season": "DEMO", "mode": "demo", "sources": ["נתונים סינתטיים — אינם נתוני יורוליג"],
-            "teams": teams, "players": players, "games": games, "appearances": appearances}
+            "teams": teams, "coaches": [{"id": "COACH-"+t["id"], "name": "מאמן "+t["name"], "team_id": t["id"], "active": True} for t in teams], "players": players, "games": games, "appearances": appearances}

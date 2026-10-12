@@ -139,3 +139,7 @@ node tests/browser.cjs
 ## המשך מוצע
 
 חיבור מחירים וזמינות ממקור מורשה והשלמת תפקידי גארדים → בדיקת תחזיות על מחזורים היסטוריים → המלצות מותאמות לסגל ולתקציב שלך.
+
+### Coach recommendations
+
+The dashboard also lists up to three active head coaches from official season registrations, against their upcoming EuroLeague opponent. It compares each team's average point differential over the selected history window (at least three completed results per side). Half the difference is an exploratory matchup ranking, not a calibrated margin forecast, win probability, or expected fantasy score. Coach scoring follows team results, including overtime rules; player PIR is not used. Coach credit prices are unavailable from the public statistical source. The shortlist refreshes with the same automatic statistics sync.

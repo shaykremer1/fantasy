@@ -35,6 +35,9 @@ const path = require('node:path');
     assert(await page.locator('#demo-banner').isVisible());
     assert.equal(await page.locator('.shortlist-column').count(),3);
     assert.equal(await page.locator('.shortlist-player').count(),9);
+    assert.equal(await page.locator('#coach-picks .coach-card').count(),3);
+    assert((await page.locator('#coach-picks').innerText()).includes('מול'));
+    assert((await page.locator('#coach-picks').innerText()).includes('היריבה:'));
     assert.equal(await page.locator('#position-defense-rows tr').count(),6);
     for (const [role,col] of [['C',1],['F',2],['G',3]]) {
       const button=page.locator(`[data-position-sort="${role}"]`);

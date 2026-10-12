@@ -7,3 +7,5 @@
 #advanced>summary{cursor:pointer;color:var(--muted);margin:20px 0}#advanced[open]>summary{color:var(--mint)}
 
 .position-sort{background:none;border:0;color:inherit;padding:4px 0;cursor:pointer;font:inherit}.position-sort:hover,.position-sort:focus-visible{color:var(--mint)}th[aria-sort="ascending"],th[aria-sort="descending"]{color:var(--mint)}
+
+.coach-card{background:#17212d;border:1px solid var(--line);border-radius:7px;padding:17px}.coach-card h3{color:var(--mint);font-size:16px}.coach-card p{color:var(--muted);font-size:12px}

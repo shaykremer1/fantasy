@@ -2,6 +2,7 @@
 from collections import defaultdict
 from statistics import mean
 from .data import timestamp
+from .coaches import recommend_coaches
 
 
 def role(position):
@@ -63,7 +64,7 @@ def scout(data, analysis):
         values.sort(key=lambda p:(-p['scout_score'],-p['recent_pir'],p['player_id']))
         shortlists[pos]=values[:3]
     defense.sort(key=lambda d:(d['role'],-d['average_pir'],d['team_id']))
-    return {'defenses':defense,'top_three':shortlists,
+    return {'defenses':defense,'top_three':shortlists,'coaches':recommend_coaches(data, analysis),
             'point_guards':sorted([p for p in analysis['recommendations'] if p['position']=='PG' and p['projected_pir'] is not None],key=lambda p:-p['projected_pir'])[:3],
             'method':'Recent player PIR × opponent PIR/30min relative to the league at that position. Exploratory ranking, not a calibrated forecast.',
             'guard_note':'G includes point guards and shooting guards. Unknown guard roles are never labeled PG.'}

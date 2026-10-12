@@ -120,6 +120,11 @@ def schedule(payload, season):
             games.append({"id": str(item["gameCode"]), "round": int(item["round"]), "date": date,
                 "home_team_id": str(home["code"]), "away_team_id": str(away["code"]),
                 "status": "finished" if played else "scheduled"})
+            if played:
+                for field, side in [('home_score', 'local'), ('away_score', away_key)]:
+                    score = item[side].get('score')
+                    if score is not None:
+                        games[-1][field] = score
         except (KeyError, TypeError, AttributeError) as exc:
             raise ValueError("Official schedule schema changed; adapter requires verification") from exc
     return list(teams.values()), games
@@ -216,9 +221,15 @@ def sync(existing, season, fetch=get_json, progress=None, through_round=None):
         raise ValueError("Incomplete official roster; existing snapshot retained")
     # Official season registrations include coaches/staff and transferred players.
     # Player type J, active registration, latest startDate wins; no fuzzy matching.
+    coaches = {}
     registrations = {}
     all_registrations = {}
     for person in sorted(people["data"], key=lambda item: item.get("startDate") or ""):
+        if person.get('type') == 'E' and person.get('active') is True:
+            club = person.get('club', {}).get('code')
+            if club in {t['id'] for t in teams}:
+                coaches[club] = {'id': 'COACH-' + str(person['person']['code']),
+                                 'name': person['person']['name'], 'team_id': club, 'active': True}
         if person.get("type") != "J":
             continue
         code = person.get("person", {}).get("code")
@@ -258,7 +269,7 @@ def sync(existing, season, fetch=get_json, progress=None, through_round=None):
     roster = {k: p for k, p in roster.items() if p["team_id"] in valid_teams or any(r["player_id"] == k for r in rows)}
     result = {"schema_version": 1, "season": season, "mode": "live",
         "sources": list(dict.fromkeys((existing["sources"] if same else []) + ["https://api-live.euroleague.net", "https://live.euroleague.net"])),
-        "teams": teams, "players": list(roster.values()), "games": games, "appearances": rows}
+        "teams": teams, "coaches": list(coaches.values()), "players": list(roster.values()), "games": games, "appearances": rows}
     return validate(result)
 
 
