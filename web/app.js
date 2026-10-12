@@ -1,5 +1,5 @@
 const $ = id => document.getElementById(id);
-const state = {mode: 'live', category: 'C', defenseSort: 'matchup_delta_per_30', data: null, request: 0, visible:12, positionSort:null, positionDirection:'desc', squad:null, squadRequest:0, selectedPlan:0, squadKeep:[], squadKeepInitialized:false};
+const state = {mode: 'live', category: 'C', defenseSort: 'matchup_delta_per_30', data: null, request: 0, visible:12, positionSort:null, positionDirection:'desc', squad:null, squadRequest:0, selectedPlan:0, squadKeep:[], squadKeepInitialized:false, squadKeepRound:null};
 const fmt = (value, digits = 1) => value == null ? '—' : Number(value).toLocaleString('he-IL', {maximumFractionDigits: digits});
 const sign = (value,digits=1) => value == null ? '—' : `${value > 0 ? '+' : ''}${fmt(value,digits)}`;
 const date = value => value ? new Date(value).toLocaleString('he-IL', {timeZone: 'Asia/Jerusalem', dateStyle: 'short', timeStyle: 'short'}) : 'אין עדכון';
@@ -285,7 +285,9 @@ async function loadSquad() {
       return;
     }
     const s=data.squad;
-    if(!state.squadKeepInitialized){state.squadKeep=s.preferred_incoming_ids||[];state.squadKeepInitialized=true;}
+    const changedWeek=state.squadKeepRound!==null&&state.squadKeepRound!==s.matchday;
+    if(!state.squadKeepInitialized||changedWeek){state.squadKeep=s.preferred_incoming_ids||[];state.squadKeepInitialized=true;state.squadKeepRound=s.matchday;state.selectedPlan=0;}
+    if(changedWeek&&$('squad-dialog').open){loadSquad();return;}
     $('squad-summary').textContent=`${s.name} · ${s.previous_round?`סגל סגור ממחזור ${s.previous_round.matchday} → הצעות למחזור ${s.matchday}`:`מחזור ${s.matchday}`} · ${fmt(s.budget)} קרדיטים בתקציב`;
     if($('squad-dialog').open)renderSquad();
   }catch(error) {
@@ -322,7 +324,17 @@ function renderSquadPlan() {
   const allocation=choice?.lineup||plans.current_lineup, rows=choice?.players||plans.current_players;
   let html='';
   if(choice) {
-    html=`<div class="squad-comparison"><div><span>מדד הסגל הסגור</span><strong>${fmt(plans.current_model_score)}</strong></div><span class="comparison-arrow">←</span><div><span>אחרי השינויים</span><strong>${fmt(choice.model_score)}</strong></div><span class="matchup-pill ${choice.improvement<0?'negative':''}">${sign(choice.improvement)}</span></div><div class="squad-plan-budget"><span>${choice.transfer_count} שינויים מהסגל הסגור · ${choice.net_transfer_count} חילופים בסך הכול במחזור</span><strong>${fmt(choice.free_credits)} קרדיטים יישארו</strong></div><h4>העברות לביצוע במשחק</h4>${choice.transfers.map(t=>`<div class="squad-transfer"><div class="transfer-out"><span>להוציא</span><strong dir="auto">${escape(displayName(t.out.name))}</strong><small>${fmt(t.out.credits)} קרדיטים</small></div><span class="transfer-arrow">←</span><div class="transfer-in"><span>להכניס</span><strong dir="auto">${escape(displayName(t.in.name))}</strong><small>${fmt(t.in.credits)} קרדיטים · מול ${escape(t.in.opponent||'—')}</small></div></div>`).join('')}<details class="planned-roster"><summary>הסגל המלא אחרי השינויים</summary>${squadRoster(choice.players)}</details>`;
+    html=`<div class="squad-comparison"><div><span>מדד הסגל הסגור</span><strong>${fmt(plans.current_model_score)}</strong></div><span class="comparison-arrow">←</span><div><span>אחרי השינויים</span><strong>${fmt(choice.model_score)}</strong></div><span class="matchup-pill ${choice.improvement<0?'negative':''}">${sign(choice.improvement)}</span></div><div class="squad-plan-budget"><span>${choice.transfer_count} שינויים מהסגל הסגור · ${choice.net_transfer_count} חילופים בסך הכול במחזור</span><strong>${fmt(choice.free_credits)} קרדיטים יישארו</strong></div><h4>חילופים מוצעים ביחס לסגל הסגור</h4>${choice.transfers.map(t=>`<div class="squad-transfer"><div class="transfer-out"><span>להוציא</span><strong dir="auto">${escape(displayName(t.out.name))}</strong><small>${fmt(t.out.credits)} קרדיטים</small></div><span class="transfer-arrow">←</span><div class="transfer-in"><span>להכניס</span><strong dir="auto">${escape(displayName(t.in.name))}</strong><small>${fmt(t.in.credits)} קרדיטים · מול ${escape(t.in.opponent||'—')}</small></div></div>`).join('')}<details class="planned-roster"><summary>הסגל המלא אחרי השינויים</summary>${squadRoster(choice.players)}</details>`;
+  }
+  if(choice && state.squad.squad.draft_transfers?.in?.length) {
+    const draft=state.squad.squad.players, targetIds=new Set(choice.players.map(p=>p.fantasy_player_id)), draftIds=new Set(draft.map(p=>p.fantasy_player_id));
+    const out=draft.filter(p=>!targetIds.has(p.fantasy_player_id)), incoming=choice.players.filter(p=>!draftIds.has(p.fantasy_player_id));
+    const actual=[];
+    for(const role of ['G','F','C','H']) {
+      const from=out.filter(p=>p.role===role), to=incoming.filter(p=>p.role===role);
+      from.forEach((p,i)=>{if(to[i])actual.push({out:p,in:to[i]});});
+    }
+    html+=actual.length?`<details class="planned-roster"><summary>מה לשנות בתכנון הנוכחי כדי להגיע לחלופה</summary>${actual.map(t=>`<div class="squad-transfer"><div class="transfer-out"><span>בתכנון הנוכחי</span><strong dir="auto">${escape(displayName(t.out.name))}</strong></div><span class="transfer-arrow">←</span><div class="transfer-in"><span>בחלופה המוצעת</span><strong dir="auto">${escape(displayName(t.in.name))}</strong></div></div>`).join('')}</details>`:'<p class="squad-note">התכנון הנוכחי כבר תואם לחלופה הזו.</p>';
   }
   if(allocation) {
     const index=Object.fromEntries(rows.map(p=>[p.fantasy_player_id,p]));
