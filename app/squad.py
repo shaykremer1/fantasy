@@ -24,7 +24,7 @@ def sync_squad(data, public=get_json, authorized=authorized_json):
     future = [g for g in data['games'] if g['status'] == 'scheduled' and timestamp(g['date']) > utcnow()]
     if not future or min(future, key=lambda g: timestamp(g['date']))['round'] != day['number']:
         raise ValueError('Squad matchday does not match the upcoming EuroLeague round')
-    user = object_data(authorized(BASE+'/user/config'), 'user config')
+    user = object_data(authorized(BASE+'/user/config?game=7'), 'user config')
     teams = user.get('fantasy_teams')
     if not isinstance(teams, list):
         raise ValueError('Owner team list schema requires verification')
