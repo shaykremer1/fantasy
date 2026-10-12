@@ -41,7 +41,7 @@ class ScoutTests(unittest.TestCase):
             with patch('app.server.sync',return_value=data), patch('app.server.connection_status',return_value={'credential_present':True}), patch('app.server.sync_prices',side_effect=ValueError('unauthorized')):
                 self.assertTrue(app.refresh_once())
             self.assertEqual(app.store.read()['season'],'E2026')
-            self.assertIsNotNone(app.market_error)
+            self.assertEqual(app.market_error,'unauthorized')
 
     def test_automatic_prices_saved_after_statistics(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -86,6 +86,10 @@ class Application:
                         self.store.save(priced)
                         self.market_report = report
                         self.market_error = None
+                except ValueError as exc:
+                    # Provider validation errors contain field names/status codes, not response bodies or credentials.
+                    with self.lock:
+                        self.market_error = str(exc)[:300]
                 except Exception:
                     # Successful statistics remain available when pricing is unavailable.
                     with self.lock:
