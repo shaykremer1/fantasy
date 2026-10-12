@@ -162,7 +162,11 @@ class Handler(SimpleHTTPRequestHandler):
                 venue = query.get('venue',['all'])[0]
                 if window not in {0,5,10} or venue not in {'all','home','away'}:
                     raise ValueError('Invalid squad analysis filters')
-                plans = plan_squad(self.app.snapshot('live'),owner,target_round=rnd,window=window,venue=venue)
+                keep = query.get('keep',[None])[0]
+                required = None if keep is None else [] if keep == 'none' else keep.split(',')
+                if required is not None and (len(required)>11 or any(not i.isdigit() or len(i)>16 for i in required)):
+                    raise ValueError('Invalid required player ids')
+                plans = plan_squad(self.app.snapshot('live'),owner,target_round=rnd,window=window,venue=venue,required_ids=required)
                 return self.reply(200, {'available':True, 'squad':owner, 'plans':plans, 'error':error, 'updating':updating})
             if parsed.path == "/api/health":
                 return self.reply(200, {"status": "ok"})

@@ -75,7 +75,17 @@ def lineup(roster):
     return best
 
 
-def plan_squad(data, squad, target_round=None, window=10, venue='all'):
+def plan_squad(data, squad, target_round=None, window=10, venue='all', required_ids=None):
+    draft_squad = squad
+    previous = squad.get('previous_round')
+    if squad.get('requires_closed_round') and (not previous or not previous.get('complete')):
+        return {'available':False,'reason':'ממתין לטעינת הסגל הסגור של המחזור האחרון ששוחק.'}
+    if previous and previous.get('complete'):
+        prior_value = previous.get('roster_value')
+        squad = {**squad, 'players':previous['players'], 'roster_value':prior_value,
+                 'free_credits':squad['budget']-prior_value if prior_value is not None else None,
+                 'transfers_used':0, 'transfers_remaining':squad['transfers_limit'] if squad['transfers_limit'] is not None else 11}
+    required_ids = set(draft_squad.get('preferred_incoming_ids',[]) if required_ids is None else required_ids)
     analysis = analyze(data,target_round=target_round,window=window,venue=venue)
     if not squad['complete']:
         return {'available':False,'reason':'הסגל אינו מלא: נדרשים 4 גארדים, 4 פורוורדים, 2 סנטרים ומאמן.'}
@@ -87,6 +97,13 @@ def plan_squad(data, squad, target_round=None, window=10, venue='all'):
     if squad['free_credits'] is None or any(p['credits'] is None for p in squad['players']):
         return {'available':False,'reason':'חסר מחיר מאומת בסגל; אי אפשר לבדוק את התקציב.'}
     pool = candidates(data,analysis)
+    for draft in draft_squad['players']:
+        if draft['fantasy_player_id'] not in pool:
+            pool[draft['fantasy_player_id']] = {**draft,'score':None,'opponent':None,'availability':'unknown'}
+    if any(i not in pool or pool[i].get('credits') is None for i in required_ids):
+        return {'available':False,'reason':'חסר מחיר מעודכן לאחת הבחירות שסימנת לשמירה.'}
+    if any(sum(pool[i]['role']==r for i in required_ids)>n for r,n in squad['quotas'].items()):
+        return {'available':False,'reason':'הבחירות שסומנו לשמירה חורגות ממספר השחקנים המותר בעמדה.'}
     excluded = {p['player_id']:p['reason'] for p in analysis['excluded']}
     original = []
     for own in squad['players']:
@@ -97,15 +114,15 @@ def plan_squad(data, squad, target_round=None, window=10, venue='all'):
             item.update(score=0, availability='out')
         original.append(item)
         pool[own['fantasy_player_id']] = item
-    missing = [p['name'] for p in original if p['score'] is None]
+    missing = list(dict.fromkeys([p['name'] for p in original if p['score'] is None]+[pool[i]['name'] for i in required_ids if pool[i]['score'] is None]))
     quotas = squad['quotas'];budget = squad['budget']; club_limit = squad['club_limit']
     buy = defaultdict(list)
     for p in pool.values():
-        if p['score'] is not None and p['credits'] is not None and p['role'] in quotas and p.get('team_id') is not None:
+        if (p['score'] is not None or p['fantasy_player_id'] in required_ids) and p['credits'] is not None and p['role'] in quotas and p.get('team_id') is not None:
             buy[p['role']].append(p)
     for r, values in buy.items():
-        ordered = sorted(values,key=lambda p:(-p['score'],p['credits'],p['fantasy_player_id']))[:12]
-        cheap = sorted(values,key=lambda p:(p['credits'],-p['score']))[:6]
+        ordered = sorted(values,key=lambda p:(p['fantasy_player_id'] not in required_ids,-(p['score'] or 0),p['credits'],p['fantasy_player_id']))[:12]
+        cheap = sorted(values,key=lambda p:(p['credits'],-(p['score'] or 0)))[:6]
         buy[r] = list({p['fantasy_player_id']:p for p in ordered+cheap}.values())
     start = tuple(p['fantasy_player_id'] for p in original)
     original_ids = set(start)
@@ -117,7 +134,7 @@ def plan_squad(data, squad, target_round=None, window=10, venue='all'):
             return max(0,len(set(ids)-snapshot_ids)-len(inactive_ids-set(ids)))
         return squad.get('transfers_used',0)+sum(a!=b for a,b in zip(start,ids))
     if snapshot_ids:
-        limit = len(start) if maximum is None else min(len(start),max(1,2*maximum+len(inactive_ids)))
+        limit = len(start) if maximum is None else min(len(start),max(1,(maximum if set(start)==snapshot_ids else 2*maximum)+len(inactive_ids)))
     else:
         limit = min(squad['transfers_remaining'],len(start))
     # Unknown forecasts remain locked; their value is never invented as a recommendation.
@@ -141,7 +158,7 @@ def plan_squad(data, squad, target_round=None, window=10, venue='all'):
         states = []
         for ids in beam:
             for i in unlocked:
-                if ids[i] != start[i]:continue
+                if ids[i] != start[i] or ids[i] in required_ids:continue
                 for incoming in buy[original[i]['role']]:
                     ident = incoming['fantasy_player_id']
                     if ident in ids or ident in original_ids:continue
@@ -149,6 +166,7 @@ def plan_squad(data, squad, target_round=None, window=10, venue='all'):
                     identity = frozenset(next_ids)
                     if identity in seen:continue
                     seen.add(identity)
+                    if len(required_ids-identity) > limit-depth:continue
                     if max(Counter(pool[j].get('team_id') for j in next_ids).values()) > club_limit:continue
                     score,cost = evaluate(next_ids)
                     savings = sorted((max(0,original[j]['credits']-cheapest.get(original[j]['role'],10000))
@@ -157,17 +175,17 @@ def plan_squad(data, squad, target_round=None, window=10, venue='all'):
                     net = net_transfers(next_ids)
                     if maximum is not None and net > maximum+limit-depth:continue
                     states.append(next_ids)
-                    if (maximum is None or net <= maximum) and cost <= budget+1e-6 and score > baseline+1e-6:final.append(next_ids)
+                    if required_ids.issubset(identity) and (maximum is None or net <= maximum) and cost <= budget+1e-6 and (score > baseline+1e-6 or required_ids):final.append(next_ids)
         if not states:break
         # Preserve both high-score and low-cost paths, including funding swaps.
-        best = sorted(states,key=lambda ids:(-evaluate(ids)[0],evaluate(ids)[1]))[:48]
+        best = sorted(states,key=lambda ids:(len(required_ids-set(ids)),-evaluate(ids)[0],evaluate(ids)[1]))[:48]
         affordable = sorted(states,key=lambda ids:(evaluate(ids)[1],-evaluate(ids)[0]))[:16]
         beam = list(dict.fromkeys(best+affordable))
     choices = []
     selectors = [
         ('הציון הגבוה ביותר שנמצא', final, lambda ids:(-evaluate(ids)[0],evaluate(ids)[1])),
-        ('שיפור ממוקד', [ids for ids in final if sum(a!=b for a,b in zip(start,ids)) <= 2], lambda ids:(-evaluate(ids)[0],evaluate(ids)[1])),
-        ('שיפור בלי להגדיל הוצאות', [ids for ids in final if evaluate(ids)[1] <= original_cost+1e-6], lambda ids:(-evaluate(ids)[0],evaluate(ids)[1]))]
+        ('מעט שינויים' if required_ids else 'שיפור ממוקד', [ids for ids in final if sum(a!=b for a,b in zip(start,ids)) <= 2], lambda ids:(-evaluate(ids)[0],evaluate(ids)[1])),
+        ('בלי להגדיל הוצאות' if required_ids else 'שיפור בלי להגדיל הוצאות', [ids for ids in final if evaluate(ids)[1] <= original_cost+1e-6], lambda ids:(-evaluate(ids)[0],evaluate(ids)[1]))]
     chosen = set()
     for title, eligible, ordering in selectors:
         ids = next((ids for ids in sorted(eligible,key=ordering) if frozenset(ids) not in chosen),None)
@@ -182,4 +200,4 @@ def plan_squad(data, squad, target_round=None, window=10, venue='all'):
     return {'available':True,'alternatives':choices,'current_players':original,'current_model_score':round(baseline,2),
             'current_lineup':lineup(original) if not missing else None,'missing_forecasts':missing,
             'method':'Bounded search within current budget, fantasy position quotas, club cap and remaining transfers. Player opponent-adjusted PIR; captain ×2, sixth player ×1 and bench ×0.5 when every forecast is known. Coach score uses historical matchup-margin samples with conservative scoring at 20 points. Player win bonus is not modeled; scores are exploratory, not calibrated fantasy forecasts or guaranteed global optima.',
-            'score_kind':'partial-known-components' if missing else 'weighted-roster', 'searched_transfer_limit':limit,'can_replan':bool(snapshot_ids)}
+            'score_kind':'partial-known-components' if missing else 'weighted-roster', 'searched_transfer_limit':limit,'can_replan':bool(snapshot_ids),'baseline_matchday':previous['matchday'] if previous else None,'required_ids':sorted(required_ids)}

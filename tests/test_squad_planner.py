@@ -85,6 +85,41 @@ class PlannerTests(unittest.TestCase):
             self.assertIn('upgrade',ids)
             self.assertIn('funding',ids)
 
+    def test_closed_previous_round_is_the_baseline_even_after_current_draft_changes(self):
+        import copy
+        data,squad=planner_fixture()
+        original=copy.deepcopy(squad['players'])
+        expected=plan_squad(data,squad)['current_model_score']
+        byid={p['fantasy_player_id']:p for p in data['players']}
+        for slot,incoming in zip([0,1,2,3],['10','11','12','13']):
+            p=byid[incoming]
+            squad['players'][slot]={**squad['players'][slot],'fantasy_player_id':incoming,'player_id':p['id'],'name':p['name'],'credits':p['credits']}
+        squad.update(previous_round={'matchday':10,'players':original,'roster_value':sum(p['credits'] for p in original),'complete':True},
+                     baseline_ids=[p['fantasy_player_id'] for p in original],requires_closed_round=True,
+                     transfers_used=4,transfers_limit=4,transfers_remaining=0)
+        report=plan_squad(data,squad)
+        self.assertEqual(report['baseline_matchday'],10)
+        self.assertEqual(report['current_model_score'],expected)
+        self.assertEqual({p['fantasy_player_id'] for p in report['current_players']},{p['fantasy_player_id'] for p in original})
+        self.assertGreater(len(report['alternatives']),0)
+        for choice in report['alternatives']:self.assertLessEqual(choice['net_transfer_count'],4)
+        squad.pop('previous_round')
+        self.assertFalse(plan_squad(data,squad)['available'])
+
+    def test_explicit_keep_choice_is_enforced_without_inventing_a_forecast(self):
+        from unittest.mock import patch
+        from app.squad_planner import candidates
+        from app.analysis import analyze
+        data,squad=planner_fixture();pool=candidates(data,analyze(data))
+        pool['10']['score']=None
+        with patch('app.squad_planner.candidates',return_value=pool):report=plan_squad(data,squad,required_ids=['10'])
+        self.assertGreater(len(report['alternatives']),0)
+        self.assertIn(pool['10']['name'],report['missing_forecasts'])
+        for choice in report['alternatives']:
+            selected=next(p for p in choice['players'] if p['fantasy_player_id']=='10')
+            self.assertIsNone(selected['score'])
+            self.assertIsNone(choice['lineup'])
+
     def test_lineup_has_legal_five_captain_sixth_bench_and_coach(self):
         _,squad=planner_fixture();rows=squad['players']
         for i,p in enumerate(rows):p['score']=10+i

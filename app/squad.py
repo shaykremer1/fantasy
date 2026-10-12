@@ -3,6 +3,7 @@ from .market import BASE, authorized_json
 from .providers import get_json
 from .data import number, text, utcnow, timestamp
 from collections import Counter
+from .analysis import fresh
 
 ROLES = {'Guard': 'G', 'Forward': 'F', 'Center': 'C', 'Head Coach': 'H'}
 
@@ -45,7 +46,7 @@ def sync_squad(data, public=get_json, authorized=authorized_json):
         current_prices = {p['fantasy_player_id']:p['credits'] for p in result['players']}
         for p in prior['players']:
             quote = prices.get(p['fantasy_player_id'], {})
-            p['credits'] = current_prices.get(p['fantasy_player_id'], quote.get('credits') if quote.get('price_matchday') == result['matchday'] else None)
+            p['credits'] = current_prices.get(p['fantasy_player_id'], quote.get('credits') if quote.get('price_matchday') == result['matchday'] and fresh(quote.get('price_as_of'),48,utcnow()) else None)
         value = sum(p['credits'] for p in prior['players']) if all(p['credits'] is not None for p in prior['players']) else None
         result['previous_round'] = {'matchday':previous['number'], 'players':prior['players'],
                                     'roster_value':round(value,2) if value is not None else None,
@@ -54,6 +55,8 @@ def sync_squad(data, public=get_json, authorized=authorized_json):
         old = set(result.get('baseline_ids') or [])
         result['draft_transfers'] = {'in':[p for p in result['players'] if p['fantasy_player_id'] not in old],
                                     'out':[p for p in prior['players'] if p['fantasy_player_id'] not in {q['fantasy_player_id'] for q in result['players']}]}
+    result['preferred_incoming_ids'] = []
+    result['requires_closed_round'] = True
     return result
 
 
