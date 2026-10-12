@@ -35,7 +35,26 @@ def sync_squad(data, public=get_json, authorized=authorized_json):
     root = BASE+f'/fantasy-teams/{team["id"]}/matchdays/{day["id"]}'
     info = object_data(authorized(root), 'team finances')
     roster = object_data(authorized(root+'/roster'), 'team roster')
-    return parse_squad(data, cfg, team, info, roster, utcnow().isoformat())
+    observed = utcnow().isoformat()
+    result = parse_squad(data, cfg, team, info, roster, observed)
+    previous = cfg.get('previous_matchday')
+    if isinstance(previous, dict) and type(previous.get('id')) is int and type(previous.get('number')) is int:
+        prior_roster = object_data(authorized(BASE+f'/fantasy-teams/{team["id"]}/matchdays/{previous["id"]}/roster'), 'previous round roster')
+        prior = parse_squad(data,cfg,team,info,prior_roster,observed)
+        prices = {str(p['fantasy_player_id']):p for p in [*data['players'],*data.get('coaches',[])] if p.get('fantasy_player_id') is not None}
+        current_prices = {p['fantasy_player_id']:p['credits'] for p in result['players']}
+        for p in prior['players']:
+            quote = prices.get(p['fantasy_player_id'], {})
+            p['credits'] = current_prices.get(p['fantasy_player_id'], quote.get('credits') if quote.get('price_matchday') == result['matchday'] else None)
+        value = sum(p['credits'] for p in prior['players']) if all(p['credits'] is not None for p in prior['players']) else None
+        result['previous_round'] = {'matchday':previous['number'], 'players':prior['players'],
+                                    'roster_value':round(value,2) if value is not None else None,
+                                    'complete':prior['complete']}
+        result['baseline_ids'] = [p['fantasy_player_id'] for p in prior['players']] if prior['complete'] else None
+        old = set(result.get('baseline_ids') or [])
+        result['draft_transfers'] = {'in':[p for p in result['players'] if p['fantasy_player_id'] not in old],
+                                    'out':[p for p in prior['players'] if p['fantasy_player_id'] not in {q['fantasy_player_id'] for q in result['players']}]}
+    return result
 
 
 def parse_squad(data, cfg, team, info, roster, observed_at):
