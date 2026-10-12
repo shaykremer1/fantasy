@@ -81,6 +81,17 @@ def parse_squad(data, cfg, team, info, roster, observed_at):
         raise ValueError('Squad trade limits require verification')
     if type(club_limit) is not int or club_limit < 1:
         raise ValueError('Squad club limit requires verification')
+    if info.get('created_on_matchday_id') == cfg['current_matchday']['id']:
+        maximum = None  # The official client treats creation during this round as unlimited.
+    snapshot = roster.get('latest_snapshot')
+    baseline = None
+    inactive = []
+    if isinstance(snapshot, dict) and isinstance(snapshot.get('players'), list):
+        identifiers = [p.get('id') for p in snapshot['players']]
+        if len(identifiers) == 11 and len(set(identifiers)) == 11 and all(type(i) is int and i > 0 for i in identifiers):
+            baseline = [str(i) for i in identifiers]
+            statuses = roster.get('snapshot_players_current_status') or []
+            inactive = [str(p['id']) for p in statuses if p.get('active') is False and str(p.get('id')) in baseline]
     total = sum(p['credits'] for p in players) if all(p['credits'] is not None for p in players) else None
     return {'name': text(team.get('name'), 'squad team name'), 'matchday': cfg['current_matchday']['number'],
             'observed_at': observed_at, 'players': players, 'budget': round(budget, 2),
@@ -88,6 +99,6 @@ def parse_squad(data, cfg, team, info, roster, observed_at):
             'free_credits': round(budget-total, 2) if total is not None else None,
             'transfers_used': used, 'transfers_limit': maximum,
             'transfers_remaining': max(0, maximum-used) if maximum is not None else len(players),
-            'club_limit': club_limit, 'quotas': quotas,
+            'club_limit': club_limit, 'quotas': quotas, 'baseline_ids':baseline, 'baseline_inactive_ids':inactive,
             'complete': Counter(p['role'] for p in players) == Counter(quotas),
             'source': 'EuroLeague Fantasy Challenge — owner roster and team finances'}
