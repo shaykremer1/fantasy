@@ -36,6 +36,16 @@ const path = require('node:path');
     assert.equal(await page.locator('.shortlist-column').count(),3);
     assert.equal(await page.locator('.shortlist-player').count(),9);
     assert.equal(await page.locator('#position-defense-rows tr').count(),6);
+    for (const [role,col] of [['C',1],['F',2],['G',3]]) {
+      const button=page.locator(`[data-position-sort="${role}"]`);
+      for (const descending of [true,false]) {
+        await button.click();
+        const values=await page.locator('#position-defense-rows tr').evaluateAll((rows,col)=>rows.map(r=>Number(r.cells[col].querySelector('b').textContent)),col);
+        assert.deepEqual(values,[...values].sort((a,b)=>descending?b-a:a-b));
+        assert.equal(await button.locator('..').getAttribute('aria-sort'),descending?'descending':'ascending');
+      }
+    }
+
     await page.locator('#advanced > summary').click();
     await page.waitForFunction(()=>document.getElementById('validation-message').textContent.includes('בדיקה סינתטית'));
     assert(await page.locator('#validation-metrics').isVisible());

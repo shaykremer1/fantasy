@@ -1,5 +1,5 @@
 const $ = id => document.getElementById(id);
-const state = {mode: 'live', category: 'C', defenseSort: 'matchup_delta_per_30', data: null, request: 0, visible:12};
+const state = {mode: 'live', category: 'C', defenseSort: 'matchup_delta_per_30', data: null, request: 0, visible:12, positionSort:null, positionDirection:'desc'};
 const fmt = (value, digits = 1) => value == null ? '—' : Number(value).toLocaleString('he-IL', {maximumFractionDigits: digits});
 const sign = (value,digits=1) => value == null ? '—' : `${value > 0 ? '+' : ''}${fmt(value,digits)}`;
 const date = value => value ? new Date(value).toLocaleString('he-IL', {timeZone: 'Asia/Jerusalem', dateStyle: 'short', timeStyle: 'short'}) : 'אין עדכון';
@@ -210,8 +210,20 @@ function renderScout() {
   $('top-three').innerHTML=['C','F','G'].map(role=>`<article class="shortlist-column"><h3>${labels[role]}</h3>${scout.top_three[role].length ? scout.top_three[role].map((p,i)=>`<div class="shortlist-player"><strong>${i+1}. ${escape(p.name)}</strong><p>${escape(p.team)} מול ${escape(p.opponent)} · ${escape(date(p.date))}</p><p>היריבה מאפשרת <b>${fmt(p.opponent_average_pir)} PIR</b> לשחקן בעמדה · ${p.opponent_games} משחקים</p><p>התאמת יריבה: <b class="numeric">${fmt((p.matchup_index-1)*100)}%</b> ביחס לליגה · ציון בחירה <b>${fmt(p.scout_score)}</b></p><small>${p.availability==='available'?'זמין לפי המקור':p.availability==='doubtful'?'בספק':'זמינות לא מאומתת'}${p.credits==null?' · מחיר לא ידוע':` · ${fmt(p.credits)} קרדיטים`}</small></div>`).join(''):'<p class="no-results">אין מספיק משחקים ונתונים לבחירת שלושה מועמדים.</p>'}</article>`).join('');
   const teams=new Map();
   scout.defenses.forEach(d=>{if(!teams.has(d.team_id))teams.set(d.team_id,{name:d.team});teams.get(d.team_id)[d.role]=d;});
-  $('position-defense-rows').innerHTML=[...teams.values()].sort((a,b)=>a.name.localeCompare(b.name)).map(t=>`<tr><td>${escape(t.name)}</td>${['C','F','G'].map(r=>{const d=t[r];return `<td>${d?`<b>${fmt(d.average_pir)}</b><small class="confidence"> · ${d.games} משחקים / ${d.appearances} הופעות</small>`:'—'}</td>`;}).join('')}</tr>`).join('')||'<tr><td colspan="4" class="no-results">ממתין לסטטיסטיקות יורוליג.</td></tr>';
+  $('position-defense-rows').innerHTML=[...teams.values()].sort((a,b)=>{if(state.positionSort){const x=a[state.positionSort]?.average_pir,y=b[state.positionSort]?.average_pir;if(x==null&&y!=null)return 1;if(y==null&&x!=null)return -1;if(x!=null&&y!=null&&x!==y)return state.positionDirection==='desc'?y-x:x-y;}return a.name.localeCompare(b.name);}).map(t=>`<tr><td>${escape(t.name)}</td>${['C','F','G'].map(r=>{const d=t[r];return `<td>${d?`<b>${fmt(d.average_pir)}</b><small class="confidence"> · ${d.games} משחקים / ${d.appearances} הופעות</small>`:'—'}</td>`;}).join('')}</tr>`).join('')||'<tr><td colspan="4" class="no-results">ממתין לסטטיסטיקות יורוליג.</td></tr>';
   const a=state.data.auto_refresh;
   $('automatic-status').textContent=state.mode==='demo'?'הדגמה סינתטית — אינה מתעדכנת ממשחקים אמיתיים.':a.enabled?`עדכון יורוליג אוטומטי כל ${a.interval_seconds/60} דקות, כל עוד השרת פועל. ${a.last_success?`עדכון מוצלח: ${date(a.last_success)}.`:'ממתין לעדכון ראשון.'} ${a.error?'העדכון האחרון נכשל; הנתונים הקודמים נשמרו.':''}`:'העדכון האוטומטי כבוי בשרת זה.';
 }
 setInterval(()=>{if(!document.hidden)load();},60000);
+
+document.querySelectorAll('[data-position-sort]').forEach(button=>button.addEventListener('click',()=>{
+  const role=button.dataset.positionSort;
+  state.positionDirection=state.positionSort===role&&state.positionDirection==='desc'?'asc':'desc';
+  state.positionSort=role;
+  document.querySelectorAll('[data-position-sort]').forEach(b=>{
+    const active=b.dataset.positionSort===role;
+    b.closest('th').setAttribute('aria-sort',active?(state.positionDirection==='desc'?'descending':'ascending'):'none');
+    b.querySelector('span').textContent=active?(state.positionDirection==='desc'?'↓':'↑'):'↕';
+  });
+  renderScout();
+}));
