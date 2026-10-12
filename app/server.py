@@ -19,6 +19,7 @@ from .market import connection_status, sync_prices
 from .backtest import evaluate
 from .scout import scout
 from .photos import apply_photos
+from .squad import sync_squad
 from .data import utcnow
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -33,6 +34,8 @@ class Application:
         self.job = {"state": "idle", "completed": 0, "total": 0, "error": None}
         self.market_report = None
         self.market_error = None
+        self.squad = None
+        self.squad_error = None
         self.stop_event=threading.Event()
         self.auto={'enabled':False,'interval_seconds':300,'last_attempt':None,'last_success':None,'error':None}
         self.auto_thread=None
@@ -94,6 +97,16 @@ class Application:
                     # Successful statistics remain available when pricing is unavailable.
                     with self.lock:
                         self.market_error = 'Price source could not be refreshed; previous prices retained'
+            if connection_status()['credential_present']:
+                try:
+                    owner_squad = sync_squad(self.store.read())
+                    with self.lock:
+                        self.squad = owner_squad
+                        self.squad_error = None
+                except ValueError as exc:
+                    with self.lock:self.squad_error = str(exc)[:300]
+                except Exception:
+                    with self.lock:self.squad_error = 'Squad source could not be refreshed'
             with self.lock:
                 self.job.update(state="done")
 
@@ -132,6 +145,15 @@ class Handler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         try:
+            if parsed.path == '/api/squad':
+                with self.app.lock:
+                    owner = copy.deepcopy(self.app.squad)
+                    error = self.app.squad_error
+                    updating = self.app.job['state'] == 'running'
+                if owner is None:
+                    return self.reply(200, {'available':False, 'error':error, 'updating':updating})
+                # Public access was explicitly requested by the owner for now.
+                return self.reply(200, {'available':True, 'squad':owner, 'error':error, 'updating':updating})
             if parsed.path == "/api/health":
                 return self.reply(200, {"status": "ok"})
             if parsed.path=='/api/auto-status':
