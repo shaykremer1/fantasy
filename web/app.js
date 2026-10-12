@@ -1,5 +1,5 @@
 const $ = id => document.getElementById(id);
-const state = {mode: 'live', category: 'C', defenseSort: 'matchup_delta_per_30', data: null, request: 0, visible:12, positionSort:null, positionDirection:'desc'};
+const state = {mode: 'live', category: 'C', defenseSort: 'matchup_delta_per_30', data: null, request: 0, visible:12, positionSort:null, positionDirection:'desc', squad:null, squadRequest:0, selectedPlan:0};
 const fmt = (value, digits = 1) => value == null ? '—' : Number(value).toLocaleString('he-IL', {maximumFractionDigits: digits});
 const sign = (value,digits=1) => value == null ? '—' : `${value > 0 ? '+' : ''}${fmt(value,digits)}`;
 const date = value => value ? new Date(value).toLocaleString('he-IL', {timeZone: 'Asia/Jerusalem', dateStyle: 'short', timeStyle: 'short'}) : 'אין עדכון';
@@ -79,6 +79,7 @@ async function load() {
     $('sync-button').disabled = state.mode === 'demo';
     $('roster-button').disabled = state.mode === 'demo';
     renderScout();
+    loadSquad();
     renderDefense();
     renderPlayers();
     loadValidation(request);
@@ -258,3 +259,77 @@ document.querySelectorAll('[data-position-sort]').forEach(button=>button.addEven
   });
   renderScout();
 }));
+
+
+async function loadSquad() {
+  const request=++state.squadRequest;
+  if(state.mode==='demo') {
+    $('squad-summary').textContent='הסגל האישי מוצג במצב נתונים אמיתיים.';
+    $('open-squad').disabled=true;
+    return;
+  }
+  $('open-squad').disabled=false;
+  const params=new URLSearchParams({window:$('window').value,venue:$('venue').value});
+  if($('round').value)params.set('round',$('round').value);
+  if(!$('squad-dialog').open)params.set('summary','1');
+  try {
+    const data=await api('/api/squad?'+params);
+    if(request!==state.squadRequest)return;
+    state.squad=data;
+    if(!data.available) {
+      const message=data.updating?'הסגל נטען במהלך הסנכרון…':data.error?'קריאת הסגל לא הצליחה; ממתין לעדכון הבא.':'הסגל ממתין לחיבור לפנטזי.';
+      $('squad-summary').textContent=message;
+      $('squad-message').textContent=message;
+      $('squad-content').innerHTML='';
+      return;
+    }
+    const s=data.squad;
+    $('squad-summary').textContent=`${s.name} · ${fmt(s.roster_value)} קרדיטים בסגל · ${fmt(s.free_credits)} פנויים · מחזור ${s.matchday}`;
+    if($('squad-dialog').open)renderSquad();
+  }catch(error) {
+    if(request!==state.squadRequest)return;
+    $('squad-message').textContent='לא הצלחתי לטעון את הסגל. אפשר לנסות שוב.';
+  }
+}
+
+function squadRow(p, extra='') {
+  return `<div class="squad-player-row">${portrait(p,'squad-portrait')}<div class="squad-player-name"><strong dir="auto">${escape(displayName(p.name))}</strong><span dir="auto">${escape(p.team||'')}</span>${p.opponent?`<small>מול ${escape(p.opponent)}</small>`:''}</div><div class="squad-player-price"><b>${fmt(p.credits)}</b><small>קרדיטים</small>${extra}</div></div>`;
+}
+function squadRoster(rows) {
+  const labels={G:'גארדים',F:'פורוורדים',C:'סנטרים',H:'מאמן'};
+  return ['G','F','C','H'].map(r=>`<div class="squad-role"><h4>${labels[r]}</h4>${rows.filter(p=>p.role===r).map(p=>squadRow(p,p.captain?'<span class="captain-tag">קפטן</span>':'')).join('')}</div>`).join('');
+}
+function renderSquad() {
+  const data=state.squad;
+  if(!data?.available)return;
+  const s=data.squad, plans=data.plans, choices=plans?.alternatives||[];
+  state.selectedPlan=Math.min(state.selectedPlan,Math.max(0,choices.length-1));
+  const raw=s.players, current=plans?.current_players||raw;
+  $('squad-message').textContent=`עודכן ${date(s.observed_at)}${data.error?' · קריאת הסגל האחרונה נכשלה; מוצג העדכון האחרון.':''}${data.updating?' · סנכרון נוסף מתבצע כעת.':''}`;
+  $('squad-content').innerHTML=`<div class="squad-wallet"><article><span>שווי הסגל</span><strong>${fmt(s.roster_value)}</strong></article><article><span>קרדיטים פנויים</span><strong>${fmt(s.free_credits)}</strong></article><article><span>תקציב כולל</span><strong>${fmt(s.budget)}</strong></article><article><span>חילופים בתכנון הנוכחי</span><strong class="numeric">${s.transfers_used}${s.transfers_limit==null?' / ללא מגבלה':` / ${s.transfers_limit}`}</strong></article></div><nav class="squad-dialog-nav" aria-label="ניווט בחלונית הסגל"><button type="button" data-squad-jump="squad-options">אפשרויות לשיפור ↓</button><button type="button" data-squad-jump="squad-current">הסגל הנוכחי ↓</button></nav><div class="squad-layout"><section id="squad-current" class="squad-current"><h3>הסגל הנוכחי · מחזור ${s.matchday}</h3>${squadRoster(current)}</section><section id="squad-options" class="squad-options"><h3>אפשרויות לשיפור מול היריבות</h3>${plans?.available?`${choices.length?`<div class="squad-choice-tabs">${choices.map((p,i)=>`<button type="button" data-squad-plan="${i}" class="${i===state.selectedPlan?'selected':''}">${escape(p.title)}</button>`).join('')}</div><div id="squad-plan-detail"></div>`:`<p class="squad-empty">${s.transfers_remaining===0&&!plans.can_replan?'לא נותרו חילופים נוספים למחזור זה.':'לא נמצאה חלופת חילופים שמשפרת את הציון ועומדת בתקציב ובמגבלות.'}</p><div id="squad-plan-detail"></div>`}${plans.missing_forecasts?.length?`<p class="squad-note">אין מספיק נתונים לחיזוי עבור ${plans.missing_forecasts.map(p=>escape(displayName(p))).join(', ')}. הם נשארים בסגל; ההשוואה מחושבת רק לרכיבים עם נתונים.</p>`:''}`:`<p class="squad-empty">${escape(plans?.reason||'מחשב אפשרויות…')}</p>`}<details class="squad-method"><summary>איך ההצעות מחושבות?</summary><p>החלופות שומרות על התקציב, 4 גארדים, 4 פורוורדים, 2 סנטרים ומאמן, מגבלת שחקנים מאותו מועדון ומספר החילופים שהמשחק מתיר. כאשר יש תמונת סגל מתחילת המחזור, אפשר לשנות את תכנון החילופים הקיים.</p><p>המדד משלב PIR לפי היריבה עם ניקוד מאמן משוער. בחיזוי מלא: חמישייה ושחקן שישי מקבלים משקל מלא, קפטן כפול וספסל חצי. בונוס ניצחון לשחקנים אינו כלול. זהו מדד להשוואת חלופות, לא תחזית ניקוד פנטזי מאומתת או הבטחה להרכב מיטבי.</p></details></section></div>`;
+  if(plans?.available)renderSquadPlan();
+  document.querySelectorAll('[data-squad-jump]').forEach(button=>button.addEventListener('click',()=>$(button.dataset.squadJump).scrollIntoView({block:'start'})));
+  document.querySelectorAll('[data-squad-plan]').forEach(button=>button.addEventListener('click',()=>{state.selectedPlan=Number(button.dataset.squadPlan);renderSquad();}));
+}
+function renderSquadPlan() {
+  const plans=state.squad.plans, choice=plans.alternatives[state.selectedPlan], container=$('squad-plan-detail');
+  if(!container)return;
+  const allocation=choice?.lineup||plans.current_lineup, rows=choice?.players||plans.current_players;
+  let html='';
+  if(choice) {
+    html=`<div class="squad-comparison"><div><span>המדד הנוכחי</span><strong>${fmt(plans.current_model_score)}</strong></div><span class="comparison-arrow">←</span><div><span>אחרי השינויים</span><strong>${fmt(choice.model_score)}</strong></div><span class="matchup-pill">${sign(choice.improvement)}</span></div><div class="squad-plan-budget"><span>${choice.transfer_count} שינויים בסגל · ${choice.net_transfer_count} חילופים בסך הכול במחזור</span><strong>${fmt(choice.free_credits)} קרדיטים יישארו</strong></div><h4>העברות לביצוע במשחק</h4>${choice.transfers.map(t=>`<div class="squad-transfer"><div class="transfer-out"><span>להוציא</span><strong dir="auto">${escape(displayName(t.out.name))}</strong><small>${fmt(t.out.credits)} קרדיטים</small></div><span class="transfer-arrow">←</span><div class="transfer-in"><span>להכניס</span><strong dir="auto">${escape(displayName(t.in.name))}</strong><small>${fmt(t.in.credits)} קרדיטים · מול ${escape(t.in.opponent||'—')}</small></div></div>`).join('')}<details class="planned-roster"><summary>הסגל המלא אחרי השינויים</summary>${squadRoster(choice.players)}</details>`;
+  }
+  if(allocation) {
+    const index=Object.fromEntries(rows.map(p=>[p.fantasy_player_id,p]));
+    const names=ids=>ids.map(id=>escape(displayName(index[id]?.name))).join(' · ');
+    html+=`<div class="squad-lineup"><h4>${choice?'סידור מוצע לחלופה':'סידור מוצע לסגל הקיים'}</h4><p><b>חמישייה (<span class="numeric">${allocation.formation.join('–')}</span>):</b> ${names(allocation.starters)}</p><p><b>קפטן:</b> ${names([allocation.captain])}</p><p><b>שחקן שישי:</b> ${names([allocation.sixth])}</p><p><b>ספסל:</b> ${names(allocation.bench)}</p><p><b>מאמן:</b> ${names([allocation.coach])}</p></div>`;
+  }
+  container.innerHTML=html;
+}
+$('open-squad').addEventListener('click',()=>{
+  $('squad-dialog').showModal();document.body.classList.add('modal-open');
+  $('squad-message').textContent='טוען את הסגל ומחשב אפשרויות…';
+  loadSquad();
+});
+$('close-squad').addEventListener('click',()=>$('squad-dialog').close());
+$('squad-dialog').addEventListener('close',()=>{document.body.classList.remove('modal-open');++state.squadRequest;});

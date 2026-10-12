@@ -35,3 +35,14 @@ class SquadTests(unittest.TestCase):
         with self.assertRaises(ValueError):parse_squad(empty_dataset(),cfg,{'name':'My squad'},info,roster,utcnow().isoformat())
         cfg,info,roster=self.fixtures();info['max_num_trades_per_matchday']=-1
         with self.assertRaises(ValueError):parse_squad(empty_dataset(),cfg,{'name':'My squad'},info,roster,utcnow().isoformat())
+
+    def test_snapshot_and_creation_round_limits_are_preserved(self):
+        cfg,info,roster=self.fixtures()
+        roster['latest_snapshot']={'players':[{'id':i} for i in range(1,12)]}
+        roster['snapshot_players_current_status']=[{'id':1,'active':False}]
+        s=parse_squad(empty_dataset(),cfg,{'name':'My squad'},info,roster,utcnow().isoformat())
+        self.assertEqual(s['baseline_ids'],[str(i) for i in range(1,12)])
+        self.assertEqual(s['baseline_inactive_ids'],['1'])
+        info['created_on_matchday_id']=5
+        s=parse_squad(empty_dataset(),cfg,{'name':'My squad'},info,roster,utcnow().isoformat())
+        self.assertIsNone(s['transfers_limit'])

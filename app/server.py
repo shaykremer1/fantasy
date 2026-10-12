@@ -20,6 +20,7 @@ from .backtest import evaluate
 from .scout import scout
 from .photos import apply_photos
 from .squad import sync_squad
+from .squad_planner import plan_squad
 from .data import utcnow
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -153,7 +154,16 @@ class Handler(SimpleHTTPRequestHandler):
                 if owner is None:
                     return self.reply(200, {'available':False, 'error':error, 'updating':updating})
                 # Public access was explicitly requested by the owner for now.
-                return self.reply(200, {'available':True, 'squad':owner, 'error':error, 'updating':updating})
+                if query.get('summary',['0'])[0] == '1':
+                    return self.reply(200, {'available':True, 'squad':owner, 'error':error, 'updating':updating})
+                rnd = query.get('round',[None])[0]
+                rnd = int(rnd) if rnd else None
+                window = int(query.get('window',['10'])[0])
+                venue = query.get('venue',['all'])[0]
+                if window not in {0,5,10} or venue not in {'all','home','away'}:
+                    raise ValueError('Invalid squad analysis filters')
+                plans = plan_squad(self.app.snapshot('live'),owner,target_round=rnd,window=window,venue=venue)
+                return self.reply(200, {'available':True, 'squad':owner, 'plans':plans, 'error':error, 'updating':updating})
             if parsed.path == "/api/health":
                 return self.reply(200, {"status": "ok"})
             if parsed.path=='/api/auto-status':

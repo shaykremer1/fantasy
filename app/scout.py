@@ -47,7 +47,7 @@ def scout(data, analysis):
     team_ids_by_name={t['name']:t['id'] for t in teams.values()}
     shortlists={'C':[],'F':[],'G':[]}
     for candidate in analysis['recommendations']:
-        pos=role(candidate['position'])
+        pos=candidate.get('fantasy_position') or role(candidate['position'])
         if pos not in shortlists or candidate['recent_games']<3:continue
         opponent=team_ids_by_name[candidate['opponent']]
         cell=index.get((opponent,pos))
