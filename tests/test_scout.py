@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 from app.demo import dataset
 from app.analysis import analyze
-from app.scout import scout,role
+from app.scout import scout,role,surprise_picks
 from app.server import Application
 
 
@@ -18,6 +18,29 @@ class ScoutTests(unittest.TestCase):
             self.assertEqual(scores,sorted(scores,reverse=True))
         self.assertEqual(role('SG'),'G')
         self.assertEqual(role('PF'),'F')
+
+    def test_surprises_rank_upside_for_price_not_raw_points(self):
+        base=dict(recent_games=5,projected_minutes=22,availability='unknown',matchup_index=1.2)
+        expensive=dict(base,player_id='expensive',credits=20,recent_pir=20,recent_pir_high=30,scout_score=24)
+        value=dict(base,player_id='value',credits=8,recent_pir=12,recent_pir_high=24,scout_score=14.4)
+        picks=surprise_picks([expensive,value],set())
+        self.assertEqual(picks[0]['player_id'],'value')
+        self.assertAlmostEqual(picks[0]['upside_score'],21.6)
+        self.assertAlmostEqual(picks[0]['value_score'],2.7)
+        self.assertEqual(surprise_picks([value],{'value'}),[])
+        for change in [dict(credits=None),dict(credits=0),dict(availability='doubtful'),
+                       dict(availability='out'),dict(projected_minutes=8),dict(matchup_index=.9),
+                       dict(recent_games=2),dict(scout_score=4)]:
+            self.assertEqual(surprise_picks([{**value,**change}],set()),[])
+
+    def test_surprise_high_uses_only_history_before_target_round(self):
+        data=dataset()
+        first=analyze(data)
+        future=data['games'][-1]
+        data['appearances'].append(dict(game_id=future['id'],player_id='P10',opponent_id='T0',minutes=30,pir=999))
+        second=analyze(data)
+        self.assertEqual([(p['player_id'],p['recent_pir_high']) for p in first['recommendations']],
+                         [(p['player_id'],p['recent_pir_high']) for p in second['recommendations']])
 
     def test_new_game_is_saved_before_recommendations_refresh(self):
         with tempfile.TemporaryDirectory() as folder:

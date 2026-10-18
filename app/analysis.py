@@ -144,6 +144,7 @@ def analyze(data, target_round=None, window=10, venue="all", now=None):
                 "opponent_image_url": teams[opponent].get("image_url"),
                 "position": p["position"], "fantasy_position":p.get("fantasy_position"), "category": cat, "venue": "home" if p["team_id"] == game["home_team_id"] else "away",
                 "date": game["date"], "recent_games": len(recent), "recent_pir": round(baseline, 2) if baseline is not None else None,
+                "recent_pir_high": round(mean(sorted((r["pir"] for r in recent), reverse=True)[:2]), 2) if recent else None,
                 "projected_minutes": round(minutes, 1) if minutes is not None else None,
                 "matchup_delta": round(delta, 2) if delta is not None else None,
                 "projected_pir": round(predicted, 2) if predicted is not None else None,

@@ -38,3 +38,14 @@
 עדכון מ־12 באוקטובר 2026: חיבור מחירים מורשה אומת ב־Render. נתוני הסגל, התקציב, מגבלת המועדון ומספר החילופים נקראים מהחשבון ומהמחזור הנוכחי. חלופות העברות נשוות לתמונת הסגל בתחילת המחזור (`latest_snapshot`), כולל ההתאמה לשחקנים שאינם פעילים, כפי שעושה הלקוח הרשמי. בסבב יצירת הקבוצה ההעברות בלתי מוגבלות לפי הגדרת הלקוח. כל הקריאות לחשבון הן GET; ביצוע השינויים נשאר במשחק עצמו. בונוס ניצחון לשחקנים עדיין אינו כלול במדד החיזוי.
 
 בסיס ההמלצות השבועיות הוא הסגל הסגור של המחזור האחרון ששוחק, הנקרא במפורש מהנתיב של המחזור הקודם. הסגל שנערך כבר למחזור הבא מוצג כתכנון נפרד. שחקן שכבר הוכנס בתכנון אינו מתואר כשחקן שהיה בסגל הסגור. שווי הסגל המקורי מחושב במחירי היום, והחלופות כפופות לתקציב ולמגבלות המעודכנים.
+
+### Surprise picks (experimental)
+
+The separate top three surprise picks rank upside per current credit, outside the nine
+regular positional picks. Upside is `(recent five-appearance mean PIR + mean of the
+best two PIR performances in that same history) / 2 × opponent positional matchup
+index`. This is a ranking heuristic, not a probability of a round-leading performance.
+Only pre-round history is used. Candidates require at least three recent appearances,
+15 average minutes, an ordinary scout score of at least 8, an opponent index above 1,
+and a positive price verified for the round. Out/doubtful players are excluded;
+unknown availability remains visibly unverified. No fixed price cap is applied.

@@ -60,11 +60,33 @@ def scout(data, analysis):
               'matchup_index':cell['matchup_index'],
               'scout_score':round(candidate['recent_pir']*cell['matchup_index'],2)}
         shortlists[pos].append(item)
+    all_candidates=[p for values in shortlists.values() for p in values]
     for pos,values in shortlists.items():
         values.sort(key=lambda p:(-p['scout_score'],-p['recent_pir'],p['player_id']))
         shortlists[pos]=values[:3]
+    regular_ids={p['player_id'] for values in shortlists.values() for p in values}
+    surprises=surprise_picks(all_candidates, regular_ids)
     defense.sort(key=lambda d:(d['role'],-d['average_pir'],d['team_id']))
-    return {'defenses':defense,'top_three':shortlists,'coaches':recommend_coaches(data, analysis),
+    return {'surprises':surprises,'defenses':defense,'top_three':shortlists,'coaches':recommend_coaches(data, analysis),
             'point_guards':sorted([p for p in analysis['recommendations'] if p['position']=='PG' and p['projected_pir'] is not None],key=lambda p:-p['projected_pir'])[:3],
             'method':'Recent player PIR × opponent PIR/30min relative to the league at that position. Exploratory ranking, not a calibrated forecast.',
             'guard_note':'G includes point guards and shooting guards. Unknown guard roles are never labeled PG.'}
+
+
+def surprise_picks(candidates, regular_ids):
+    """Exploratory upside per credit; no claimed probability or calibrated ceiling."""
+    picks=[]
+    for p in candidates:
+        credits=p.get('credits')
+        if (p['player_id'] in regular_ids or not credits or credits<=0
+                or p.get('availability') in ('out','doubtful')
+                or p.get('recent_games',0)<3 or (p.get('projected_minutes') or 0)<15
+                or p['matchup_index']<=1 or p['scout_score']<8
+                or p.get('recent_pir_high') is None):
+            continue
+        upside=(p['recent_pir']+p['recent_pir_high'])/2*p['matchup_index']
+        picks.append({**p,'upside_score':round(upside,2),
+                      'value_score':round(upside/credits,3),
+                      'expected_per_credit':round(p['scout_score']/credits,3)})
+    picks.sort(key=lambda p:(-p['value_score'],-p['scout_score'],p['player_id']))
+    return picks[:3]
