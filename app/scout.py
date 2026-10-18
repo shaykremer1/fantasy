@@ -89,4 +89,4 @@ def surprise_picks(candidates, regular_ids):
                       'value_score':round(upside/credits,3),
                       'expected_per_credit':round(p['scout_score']/credits,3)})
     picks.sort(key=lambda p:(-p['value_score'],-p['scout_score'],p['player_id']))
-    return picks[:3]
+    return [p for role in ('C','F','G') for p in [item for item in picks if item['role']==role][:3]]

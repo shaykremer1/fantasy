@@ -41,7 +41,7 @@
 
 ### Surprise picks (experimental)
 
-The separate top three surprise picks rank upside per current credit, outside the nine
+Three surprise picks per position (C/F/G, up to nine total) rank upside per current credit, outside the nine
 regular positional picks. Upside is `(recent five-appearance mean PIR + mean of the
 best two PIR performances in that same history) / 2 × opponent positional matchup
 index`. This is a ranking heuristic, not a probability of a round-leading performance.

@@ -20,7 +20,7 @@ class ScoutTests(unittest.TestCase):
         self.assertEqual(role('PF'),'F')
 
     def test_surprises_rank_upside_for_price_not_raw_points(self):
-        base=dict(recent_games=5,projected_minutes=22,availability='unknown',matchup_index=1.2)
+        base=dict(role='C',recent_games=5,projected_minutes=22,availability='unknown',matchup_index=1.2)
         expensive=dict(base,player_id='expensive',credits=20,recent_pir=20,recent_pir_high=30,scout_score=24)
         value=dict(base,player_id='value',credits=8,recent_pir=12,recent_pir_high=24,scout_score=14.4)
         picks=surprise_picks([expensive,value],set())
@@ -32,6 +32,18 @@ class ScoutTests(unittest.TestCase):
                        dict(availability='out'),dict(projected_minutes=8),dict(matchup_index=.9),
                        dict(recent_games=2),dict(scout_score=4)]:
             self.assertEqual(surprise_picks([{**value,**change}],set()),[])
+
+    def test_three_surprises_are_selected_independently_per_position(self):
+        candidates=[dict(player_id=f'{role}{i}',role=role,credits=8+i,recent_games=5,
+                         recent_pir=12,recent_pir_high=24,scout_score=14.4,
+                         projected_minutes=22,availability='unknown',matchup_index=1.2)
+                    for role in ('C','F','G') for i in range(5)]
+        picks=surprise_picks(candidates,set())
+        self.assertEqual(len(picks),9)
+        for role in ('C','F','G'):
+            self.assertEqual([p['player_id'] for p in picks if p['role']==role],
+                             [f'{role}{i}' for i in range(3)])
+        self.assertEqual(len(surprise_picks(candidates[:2],set())),2)
 
     def test_surprise_high_uses_only_history_before_target_round(self):
         data=dataset()
