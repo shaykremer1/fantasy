@@ -37,6 +37,16 @@ class ServerTests(unittest.TestCase):
                                      data=json.dumps(data).encode() if data is not None else None)
         return urllib.request.urlopen(req)
 
+    def test_static_assets_revalidate_and_page_references_versioned_script(self):
+        with self.request('/') as r:
+            self.assertEqual(r.headers['Cache-Control'],'no-cache')
+            html=r.read().decode()
+        import re
+        script=re.search(r'src="(/app.js\?v=[^"]+)"',html).group(1)
+        with self.request(script) as r:
+            self.assertEqual(r.headers['Cache-Control'],'no-cache')
+            self.assertIn("$('surprise-picks')",r.read().decode())
+
     def test_live_starts_empty_and_demo_is_separate(self):
         with self.request('/api/dashboard') as r:
             data = json.load(r)

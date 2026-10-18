@@ -136,6 +136,9 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(data)
 
     def end_headers(self):
+        # Revalidate page and assets together after deploys; APIs already use no-store.
+        if not urlparse(self.path).path.startswith("/api/"):
+            self.send_header("Cache-Control", "no-cache")
         self.send_header("Content-Security-Policy", "default-src 'self'; img-src 'self' https://media-cdn.incrowdsports.com https://media-cdn.cortextech.io https://fantaking-assets.dunkest.com https://www.dunkest.com; style-src 'self'; script-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'")
         super().end_headers()
 
