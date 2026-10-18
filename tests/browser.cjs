@@ -35,8 +35,19 @@ const path = require('node:path');
     });
     let lastSquadKeep=null;
     await page.route('**/api/squad?**',route=>{lastSquadKeep=new URL(route.request().url()).searchParams.get('keep');return route.fulfill({json:{available:true,squad:{name:'Synthetic test squad',players:[{...squadPlayers[0],fantasy_player_id:'31',name:'PLANNED, CURRENT'},...squadPlayers.slice(1)],previous_round:{matchday:10,players:squadPlayers,complete:true},draft_transfers:{in:[{...squadPlayers[0],fantasy_player_id:'31',name:'PLANNED, CURRENT'}],out:[squadPlayers[0]]},preferred_incoming_ids:[],budget:112.5,roster_value:110,free_credits:2.5,matchday:11,observed_at:new Date().toISOString(),transfers_used:0,transfers_limit:4},plans:{available:true,alternatives,current_players:squadPlayers,current_model_score:120,current_lineup:lineup,missing_forecasts:[]}}});});
+    // A failed first request (for example while Render wakes) must recover unaided.
+    let dashboardAttempts=0;
+    await page.route('**/api/dashboard?**',route=>{
+      dashboardAttempts++;
+      return dashboardAttempts===1 ? route.fulfill({status:503,contentType:'text/html',body:'Starting service'}) : route.continue();
+    });
     await page.goto(base);
+    await page.waitForFunction(()=>document.getElementById('feedback').textContent.includes('מנסה שוב'));
+
     await page.waitForFunction(() => document.getElementById('updated').textContent.includes('הניתוח חושב'));
+    assert(dashboardAttempts>=2);
+    assert(await page.locator('#feedback').isHidden());
+    await page.unroute('**/api/dashboard?**');
     assert.equal(await page.locator('#stat-players').innerText(), '0');
     assert(await page.locator('#empty').isVisible());
     await page.waitForFunction(()=>document.getElementById('squad-summary').textContent.includes('Synthetic test squad'));

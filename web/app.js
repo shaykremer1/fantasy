@@ -1,5 +1,5 @@
 const $ = id => document.getElementById(id);
-const state = {mode: 'live', category: 'C', defenseSort: 'matchup_delta_per_30', data: null, request: 0, visible:12, positionSort:null, positionDirection:'desc', squad:null, squadRequest:0, selectedPlan:0, squadKeep:[], squadKeepInitialized:false, squadKeepRound:null};
+const state = {mode: 'live', category: 'C', defenseSort: 'matchup_delta_per_30', data: null, request: 0, visible:12, positionSort:null, positionDirection:'desc', squad:null, squadRequest:0, selectedPlan:0, squadKeep:[], squadKeepInitialized:false, squadKeepRound:null, reloadTimer:null, retrySoon:false};
 const fmt = (value, digits = 1) => value == null ? '—' : Number(value).toLocaleString('he-IL', {maximumFractionDigits: digits});
 const sign = (value,digits=1) => value == null ? '—' : `${value > 0 ? '+' : ''}${fmt(value,digits)}`;
 const date = value => value ? new Date(value).toLocaleString('he-IL', {timeZone: 'Asia/Jerusalem', dateStyle: 'short', timeStyle: 'short'}) : 'אין עדכון';
@@ -35,7 +35,7 @@ document.addEventListener('error',event=>{
 },true);
 
 async function api(path, body) {
-  const response = await fetch(path, body === undefined ? {} : {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  const response = await fetch(path, {...(body === undefined ? {} : {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}), signal:AbortSignal.timeout(90000)});
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
   return result;
@@ -47,6 +47,8 @@ function feedback(message, error = false) {
 }
 
 async function load() {
+  clearTimeout(state.reloadTimer);
+  state.retrySoon=false;
   const request = ++state.request;
   const params = new URLSearchParams({mode:state.mode, window:$('window').value, venue:$('venue').value});
   if ($('round').value) params.set('round', $('round').value);
@@ -54,6 +56,7 @@ async function load() {
     const data = await api(`/api/dashboard?${params}`);
     if (request !== state.request) return;
     state.data = data;
+    feedback('');
     $('data').classList.toggle('hidden',!!data.public_read_only);
     const selected = $('round').value;
     $('round').innerHTML = '<option value="">המחזור הבא</option>' + data.rounds.map(r => `<option value="${r}">${r}</option>`).join('');
@@ -79,11 +82,21 @@ async function load() {
     $('sync-button').disabled = state.mode === 'demo';
     $('roster-button').disabled = state.mode === 'demo';
     renderScout();
+    if(state.mode==='live' && !data.coverage.appearances && data.auto_refresh?.enabled) {
+      state.retrySoon=true;
+      const job=await api('/api/sync-status');
+      if(request!==state.request)return;
+      feedback(job.state==='running' ? `השרת מכין את הנתונים — ${job.total ? `${job.completed} מתוך ${job.total} משחקים נטענו.` : 'בודק את לוח המשחקים.'} הנתונים יופיעו אוטומטית; אין צורך לרענן.` : job.error ? 'עדכון הנתונים נכשל. האתר ינסה שוב אוטומטית.' : 'ממתין לעדכון הנתונים הראשון. האתר יתעדכן אוטומטית.');
+    }
     loadSquad();
     renderDefense();
     renderPlayers();
     loadValidation(request);
-  } catch (error) { feedback(`לא ניתן לטעון את הניתוח: ${error.message}`, true); }
+  } catch (error) {
+    if(request===state.request){state.retrySoon=true;feedback('החיבור לאתר מתעכב. השרת עשוי להתעורר ממצב שינה; מנסה שוב אוטומטית…', true);}
+  } finally {
+    if(request===state.request)state.reloadTimer=setTimeout(()=>load(),state.retrySoon?5000:60000);
+  }
 }
 
 async function loadValidation(request) {
@@ -246,7 +259,7 @@ function renderScout() {
   const a=state.data.auto_refresh;
   $('automatic-status').textContent=state.mode==='demo'?'הדגמה סינתטית — אינה מתעדכנת ממשחקים אמיתיים.':a.enabled?`עדכון יורוליג אוטומטי כל ${a.interval_seconds/60} דקות, כל עוד השרת פועל. ${a.last_success?`עדכון מוצלח: ${date(a.last_success)}.`:'ממתין לעדכון ראשון.'} ${a.error?'העדכון האחרון נכשל; הנתונים הקודמים נשמרו.':''}`:'העדכון האוטומטי כבוי בשרת זה.';
 }
-setInterval(()=>{if(!document.hidden)load();},60000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)load();});
 
 document.querySelectorAll('[data-position-sort]').forEach(button=>button.addEventListener('click',()=>{
   const role=button.dataset.positionSort;
@@ -278,6 +291,7 @@ async function loadSquad() {
     if(request!==state.squadRequest)return;
     state.squad=data;
     if(!data.available) {
+      if(data.updating){clearTimeout(state.reloadTimer);state.reloadTimer=setTimeout(()=>load(),5000);}
       const message=data.updating?'הסגל נטען במהלך הסנכרון…':data.error?'קריאת הסגל לא הצליחה; ממתין לעדכון הבא.':'הסגל ממתין לחיבור לפנטזי.';
       $('squad-summary').textContent=message;
       $('squad-message').textContent=message;
